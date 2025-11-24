@@ -26,14 +26,17 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
       initial={{
         opacity: 0,
         filter: 'blur(40px)',
+        y: 25,
       }}
       animate={{
         opacity: 1,
         filter: 'blur(0px)',
+        y: 0,
       }}
       exit={{
         opacity: 0,
         filter: 'blur(40px)',
+        y: 25,
       }}
       transition={{
         duration: 1,
