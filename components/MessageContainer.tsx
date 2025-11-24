@@ -27,12 +27,12 @@ function calculateDuration(text: string): number {
 }
 
 // Примерная оценка высоты сообщения на основе текста
-function estimateMessageHeight(text: string, maxWidth: number = 280): number {
-  const padding = 24 // 12px сверху + 12px снизу
-  const lineHeight = 22.4 // 16px * 1.4
-  const charsPerLine = Math.floor(maxWidth / 10) // Примерно 10px на символ
+function estimateMessageHeight(text: string, maxWidth: number = 280, fontSize: number = 16): number {
+  const padding = fontSize * 1.5 // Адаптивный padding
+  const lineHeight = fontSize * 1.4
+  const charsPerLine = Math.floor(maxWidth / (fontSize * 0.6)) // Примерно 0.6 * fontSize на символ
   const lines = Math.ceil(text.length / charsPerLine)
-  return Math.max(padding + lines * lineHeight, 60) // Минимум 60px
+  return Math.max(padding + lines * lineHeight, fontSize * 3.75) // Минимум
 }
 
 // Проверка пересечения двух прямоугольников
@@ -56,10 +56,11 @@ function getRandomPosition(
   text: string,
   existingMessages: Message[],
   messageWidth: number = 280,
+  fontSize: number = 16,
   maxAttempts: number = 50
 ): { x: number; y: number } | null {
-  const padding = 20
-  const messageHeight = estimateMessageHeight(text, messageWidth)
+  const padding = Math.max(20, fontSize * 1.25)
+  const messageHeight = estimateMessageHeight(text, messageWidth, fontSize)
   
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const x = Math.random() * (maxWidth - messageWidth - padding * 2) + padding
@@ -68,7 +69,7 @@ function getRandomPosition(
     // Проверяем пересечение с существующими сообщениями
     let hasCollision = false
     for (const msg of existingMessages) {
-      const existingHeight = estimateMessageHeight(msg.text, messageWidth)
+      const existingHeight = estimateMessageHeight(msg.text, messageWidth, fontSize)
       if (checkCollision(x, y, messageWidth, messageHeight, msg.x, msg.y, messageWidth, existingHeight)) {
         hasCollision = true
         break
@@ -91,13 +92,35 @@ export default function MessageContainer({ messages, maxConcurrent = 4 }: Messag
   const [activeMessages, setActiveMessages] = useState<Message[]>([])
   const [messageIndex, setMessageIndex] = useState(0)
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [isMobile, setIsMobile] = useState(false)
+  const [scale, setScale] = useState(1)
 
-  // Получаем размеры экрана
+  // Получаем размеры экрана и определяем тип устройства
   useEffect(() => {
     const updateDimensions = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+      const isMobileDevice = width < 768 || (isTouchDevice && width < 1024)
+      
+      setIsMobile(isMobileDevice)
+      
+      if (!isMobileDevice) {
+        // Десктоп - вычисляем масштаб для больших экранов
+        const isLargeScreen = width >= 2000 || height >= 1000
+        if (isLargeScreen) {
+          const scaleFactor = Math.min(width / 1920, height / 1080)
+          setScale(Math.max(1, Math.min(scaleFactor, 1.5)))
+        } else {
+          setScale(1)
+        }
+      } else {
+        setScale(1)
+      }
+      
       setDimensions({
-        width: window.innerWidth,
-        height: window.innerHeight,
+        width,
+        height,
       })
     }
 
@@ -125,7 +148,21 @@ export default function MessageContainer({ messages, maxConcurrent = 4 }: Messag
         if (prevMessages.length >= maxConcurrent) return prevMessages
         
         const text = messages[messageIndex]
-        const position = getRandomPosition(dimensions.width, dimensions.height, text, prevMessages)
+        // Адаптивные размеры для мобильных и десктопов
+        let fontSize: number
+        let messageWidth: number
+        
+        if (isMobile) {
+          // Мобильные устройства - уменьшены в 1.5 раза
+          fontSize = 11
+          messageWidth = 187
+        } else {
+          // Десктоп - уменьшены в 2 раза
+          fontSize = scale >= 1.3 ? 32 : scale >= 1.1 ? 25 : 18
+          messageWidth = scale >= 1.3 ? 563 : scale >= 1.1 ? 450 : 315
+        }
+        
+        const position = getRandomPosition(dimensions.width, dimensions.height, text, prevMessages, messageWidth, fontSize)
         
         if (!position) return prevMessages // Не удалось найти позицию
         
@@ -145,7 +182,7 @@ export default function MessageContainer({ messages, maxConcurrent = 4 }: Messag
     }, delay)
 
     return () => clearTimeout(timer)
-  }, [activeMessages.length, messageIndex, messages, maxConcurrent, dimensions])
+  }, [activeMessages.length, messageIndex, messages, maxConcurrent, dimensions, isMobile, scale])
 
   return (
     <AnimatePresence>

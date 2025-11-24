@@ -1,6 +1,6 @@
 {
   "name": "thanksgiving-day",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Интерактивная страница благодарностей с анимациями",
   "scripts": {
     "dev": "next dev",
