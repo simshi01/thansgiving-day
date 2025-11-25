@@ -17,6 +17,7 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
@@ -91,6 +92,7 @@ export default function Home() {
 
     setIsSubmitting(true)
     setIsSuccess(false)
+    setErrorMessage(null)
 
     try {
       // Генерируем случайные позиции для сообщения
@@ -124,6 +126,7 @@ export default function Home() {
 
       setIsSubmitting(false)
       setIsSuccess(true)
+      setErrorMessage(null)
       
       // Через 2 секунды сбрасываем состояние успеха
       setTimeout(() => {
@@ -133,7 +136,8 @@ export default function Home() {
     } catch (error) {
       console.error('Error submitting message:', error)
       setIsSubmitting(false)
-      alert(error instanceof Error ? error.message : 'Ошибка при отправке сообщения')
+      const errorMsg = error instanceof Error ? error.message : 'Ошибка при отправке сообщения'
+      setErrorMessage(errorMsg)
     }
   }
 
@@ -213,77 +217,134 @@ export default function Home() {
             position: 'relative',
             width: '100%',
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: 'column',
+            gap: '8px',
           }}
         >
-          <motion.input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            initial={false}
-            animate={{
-              backgroundColor: isFocused ? '#1C1C1E' : '#1C1C1E',
-              borderColor: isFocused ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)',
-              boxShadow: isFocused 
-                ? '0 0 0 4px rgba(255, 255, 255, 0.08), 0 0 20px rgba(255, 255, 255, 0.1)' 
-                : '0 2px 8px rgba(0, 0, 0, 0.2)',
-              scale: isFocused ? 1.01 : 1,
-            }}
-            transition={{ 
-              duration: 0.4, 
-              ease: [0.4, 0, 0.2, 1],
-              boxShadow: { duration: 0.3 },
-            }}
+          <div
             style={{
+              position: 'relative',
               width: '100%',
-              padding: isMobile ? '14px 20px' : '16px 26px',
-              backgroundColor: '#1C1C1E',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: isMobile ? '16px' : '18px',
-              color: 'white',
-              fontSize: isMobile ? '16px' : '17px',
-              fontWeight: '400',
-              lineHeight: '1.4',
-              height: isMobile ? '48px' : '52px',
-              outline: 'none',
-              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
+              display: 'flex',
+              alignItems: 'center',
             }}
-          />
-          {!isFocused && inputValue === '' && (
-            <motion.div
-              animate={{
-                opacity: isFocused ? 0 : 1,
+          >
+            <motion.input
+              type="text"
+              value={inputValue}
+              onChange={(e) => {
+                setInputValue(e.target.value)
+                // Сбрасываем ошибку при изменении текста
+                if (errorMessage) {
+                  setErrorMessage(null)
+                }
               }}
-              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              initial={false}
+              animate={{
+                backgroundColor: isFocused ? '#1C1C1E' : '#1C1C1E',
+                borderColor: errorMessage 
+                  ? '#FF3B30' 
+                  : isFocused 
+                    ? 'rgba(255, 255, 255, 0.5)' 
+                    : 'rgba(255, 255, 255, 0.12)',
+                boxShadow: errorMessage
+                  ? '0 0 0 4px rgba(255, 59, 48, 0.15), 0 0 20px rgba(255, 59, 48, 0.1)'
+                  : isFocused 
+                    ? '0 0 0 4px rgba(255, 255, 255, 0.08), 0 0 20px rgba(255, 255, 255, 0.1)' 
+                    : '0 2px 8px rgba(0, 0, 0, 0.2)',
+                scale: isFocused ? 1.01 : 1,
+              }}
+              transition={{ 
+                duration: 0.4, 
+                ease: [0.4, 0, 0.2, 1],
+                boxShadow: { duration: 0.3 },
+                borderColor: { duration: 0.3 },
+              }}
               style={{
-                position: 'absolute',
-                left: isMobile ? '20px' : '26px',
-                top: 0,
-                bottom: 0,
-                display: 'flex',
-                alignItems: 'center',
-                pointerEvents: 'none',
-                color: 'rgba(255, 255, 255, 0.5)',
+                width: '100%',
+                padding: isMobile ? '14px 20px' : '16px 26px',
+                backgroundColor: '#1C1C1E',
+                border: errorMessage 
+                  ? '2px solid #FF3B30' 
+                  : '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: isMobile ? '16px' : '18px',
+                color: 'white',
                 fontSize: isMobile ? '16px' : '17px',
                 fontWeight: '400',
                 lineHeight: '1.4',
+                height: isMobile ? '48px' : '52px',
+                outline: 'none',
                 fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
               }}
-            >
-              {displayedText}
-              {isTyping && (
-                <motion.span
-                  animate={{ opacity: [1, 0] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse' }}
-                  style={{ marginLeft: '2px' }}
+            />
+            {!isFocused && inputValue === '' && (
+              <motion.div
+                animate={{
+                  opacity: isFocused ? 0 : 1,
+                }}
+                transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                style={{
+                  position: 'absolute',
+                  left: isMobile ? '20px' : '26px',
+                  top: 0,
+                  bottom: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  pointerEvents: 'none',
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  fontSize: isMobile ? '16px' : '17px',
+                  fontWeight: '400',
+                  lineHeight: '1.4',
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
+                }}
+              >
+                {displayedText}
+                {isTyping && (
+                  <motion.span
+                    animate={{ opacity: [1, 0] }}
+                    transition={{ duration: 0.8, repeat: Infinity, repeatType: 'reverse' }}
+                    style={{ marginLeft: '2px' }}
+                  >
+                    |
+                  </motion.span>
+                )}
+              </motion.div>
+            )}
+          </div>
+          
+          {/* Сообщение об ошибке - зарезервировано место чтобы ничего не ехало */}
+          <div
+            style={{
+              width: '100%',
+              minHeight: errorMessage ? '24px' : '0px',
+              transition: 'min-height 0.3s ease',
+            }}
+          >
+            <AnimatePresence>
+              {errorMessage && (
+                <motion.p
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                  style={{
+                    margin: 0,
+                    paddingLeft: isMobile ? '20px' : '26px',
+                    paddingRight: isMobile ? '20px' : '26px',
+                    fontSize: isMobile ? '13px' : '14px',
+                    color: '#FF3B30',
+                    lineHeight: '1.4',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
+                    fontWeight: '400',
+                  }}
                 >
-                  |
-                </motion.span>
+                  {errorMessage}
+                </motion.p>
               )}
-            </motion.div>
-          )}
+            </AnimatePresence>
+          </div>
         </div>
 
         <motion.p
