@@ -18,7 +18,7 @@ const forbiddenWords = [
   'жопа', 'жоп', 'жопка', 'жопный',
   'дурак', 'дура', 'дурачок', 'дурацкий',
   'идиот', 'идиотка', 'идиотский',
-  'тупой', 'тупая', 'тупой', 'тупость',
+  'тупой', 'тупая', 'тупость',
   'дебил', 'дебилка', 'дебильный',
   'кретин', 'кретинка',
   'придурок', 'придурочный',
@@ -37,28 +37,99 @@ const forbiddenWords = [
   'гадость', 'гадкий',
 ]
 
+// Список разрешенных слов, которые могут содержать части запрещенных слов
+const allowedWords = [
+  'мама', 'маму', 'маме', 'мамой', 'матери', 'матерью',
+  'бог', 'бога', 'богу', 'богом', 'боже', 'божья', 'божью',
+  'за', 'зам', 'зато', 'зачем',
+  'благодар', 'благодарность', 'благодарить', 'благодарен',
+  'родители', 'родителям', 'родителями',
+  'семья', 'семье', 'семьей',
+  'друзья', 'друзьям', 'друзьями',
+  'жизнь', 'жизни', 'жизнью',
+  'любовь', 'любви', 'любовью',
+]
+
 // Функция проверки текста на наличие запрещенных слов
 export function moderateText(text: string): { isValid: boolean; moderatedText?: string; reason?: string } {
-  const lowerText = text.toLowerCase()
+  const lowerText = text.toLowerCase().trim()
+  
+  // Сначала проверяем разрешенные слова - если текст содержит их, проверяем только явные запрещенные
+  let hasAllowedWord = false
+  for (const allowedWord of allowedWords) {
+    if (lowerText.includes(allowedWord)) {
+      hasAllowedWord = true
+      break
+    }
+  }
   
   // Убираем знаки препинания для проверки
   const cleanText = lowerText.replace(/[.,!?;:()\-_\[\]{}'"]/g, ' ')
   const words = cleanText.split(/\s+/).filter(word => word.length > 0)
   
-  // Проверяем каждое слово
+  // Проверяем каждое слово на точное совпадение с запрещенными
   for (const word of words) {
+    // Пропускаем короткие слова (меньше 3 символов) если есть разрешенные слова
+    if (hasAllowedWord && word.length < 3) continue
+    
     for (const forbiddenWord of forbiddenWords) {
-      // Проверяем точное совпадение или вхождение
-      if (word.includes(forbiddenWord) || forbiddenWord.includes(word)) {
-        return { 
-          isValid: false, 
-          reason: `Текст содержит недопустимые слова` 
+      // Точное совпадение слова
+      if (word === forbiddenWord) {
+        // Если есть разрешенные слова, проверяем что это не часть разрешенного
+        if (hasAllowedWord) {
+          let isPartOfAllowed = false
+          for (const allowedWord of allowedWords) {
+            if (allowedWord.includes(forbiddenWord) && allowedWord.length > forbiddenWord.length) {
+              isPartOfAllowed = true
+              break
+            }
+          }
+          if (!isPartOfAllowed) {
+            return { 
+              isValid: false, 
+              reason: `Текст содержит недопустимые слова` 
+            }
+          }
+        } else {
+          return { 
+            isValid: false, 
+            reason: `Текст содержит недопустимые слова` 
+          }
+        }
+      }
+      // Слово содержит запрещенное слово (но не наоборот, чтобы не блокировать "мама")
+      else if (word.length >= forbiddenWord.length && word.includes(forbiddenWord)) {
+        // Проверяем что это не часть разрешенного слова
+        if (hasAllowedWord) {
+          let isPartOfAllowed = false
+          for (const allowedWord of allowedWords) {
+            if (allowedWord.includes(word) || word.includes(allowedWord)) {
+              isPartOfAllowed = true
+              break
+            }
+          }
+          if (!isPartOfAllowed) {
+            return { 
+              isValid: false, 
+              reason: `Текст содержит недопустимые слова` 
+            }
+          }
+        } else {
+          return { 
+            isValid: false, 
+            reason: `Текст содержит недопустимые слова` 
+          }
         }
       }
     }
   }
   
-  // Проверяем фразы целиком
+  // Если есть разрешенные слова, разрешаем (уже проверили явные запрещенные выше)
+  if (hasAllowedWord) {
+    return { isValid: true, moderatedText: text }
+  }
+  
+  // Если нет разрешенных слов, проверяем фразы целиком
   for (const forbiddenWord of forbiddenWords) {
     if (lowerText.includes(forbiddenWord)) {
       return { 
