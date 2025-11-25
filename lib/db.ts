@@ -181,13 +181,37 @@ export async function getActiveMessages(): Promise<Message[]> {
 
 // Деактивация старых сообщений (опционально, для очистки)
 export async function deactivateOldMessages(): Promise<void> {
-  const db = getPool()
-  
-  await db.query(
-    `UPDATE messages
-     SET is_active = false
-     WHERE is_active = true
-       AND created_at < NOW() - INTERVAL '1 hour'`
-  )
+  try {
+    const db = getPool()
+    
+    await db.query(
+      `UPDATE messages
+       SET is_active = false
+       WHERE is_active = true
+         AND created_at < NOW() - INTERVAL '1 hour'`
+    )
+  } catch (error) {
+    console.error('Error deactivating old messages:', error)
+    throw error
+  }
+}
+
+// Удаление сообщения по ID
+export async function deleteMessage(messageId: string): Promise<boolean> {
+  try {
+    const db = getPool()
+    
+    const result = await db.query(
+      `UPDATE messages
+       SET is_active = false
+       WHERE id = $1 AND is_active = true`,
+      [messageId]
+    )
+    
+    return result.rowCount !== null && result.rowCount > 0
+  } catch (error) {
+    console.error('Error deleting message:', error)
+    throw error
+  }
 }
 

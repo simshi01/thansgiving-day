@@ -216,6 +216,17 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
 
     newSocket.on('message:new', handleNewMessage)
 
+    newSocket.on('message:deleted', (data: { id: string }) => {
+      // Удаляем сообщение из активных и из очереди
+      setActiveMessages((prev) => 
+        prev.filter((msg) => !msg.id.startsWith(data.id))
+      )
+      
+      setMessageQueue((prev) => 
+        prev.filter((msg) => msg.id !== data.id)
+      )
+    })
+
     newSocket.on('disconnect', () => {
       console.log('Disconnected from server')
     })
@@ -294,10 +305,16 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
         // Перемешиваем сообщения для случайного порядка
         const shuffled = messages.sort(() => Math.random() - 0.5)
         setMessageQueue((prev) => {
-          // Добавляем только новые сообщения
+          // Добавляем только новые сообщения и удаляем удаленные из очереди
           const existingIds = new Set(prev.map(m => m.id))
+          const messageIds = new Set(messages.map(m => m.id))
+          
+          // Удаляем из очереди сообщения, которых больше нет в БД
+          const filteredQueue = prev.filter(m => messageIds.has(m.id))
+          
+          // Добавляем новые сообщения
           const newMessages = shuffled.filter(m => !existingIds.has(m.id))
-          return [...prev, ...newMessages]
+          return [...filteredQueue, ...newMessages]
         })
       }
     } catch (error) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { addMessage, getRecentMessages, createMessagesTable } from '@/lib/db'
+import { addMessage, getRecentMessages, createMessagesTable, deleteMessage } from '@/lib/db'
 import { validateMessage } from '@/lib/moderation'
+import { getSocketServer } from '@/lib/socket-server'
 
 // Инициализация таблицы при первом запросе
 let tableInitialized = false
@@ -118,6 +119,53 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching messages:', error)
     return NextResponse.json(
       { error: 'Ошибка при получении сообщений' },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE /api/messages - Удаление сообщения
+export async function DELETE(request: NextRequest) {
+  try {
+    await ensureTableExists()
+
+    const searchParams = request.nextUrl.searchParams
+    const messageId = searchParams.get('id')
+
+    if (!messageId) {
+      return NextResponse.json(
+        { error: 'ID сообщения обязателен' },
+        { status: 400 }
+      )
+    }
+
+    // Удаление сообщения из БД
+    const deleted = await deleteMessage(messageId)
+
+    if (!deleted) {
+      return NextResponse.json(
+        { error: 'Сообщение не найдено или уже удалено' },
+        { status: 404 }
+      )
+    }
+
+    // Отправка события удаления через Socket.io всем подключенным клиентам
+    const io = getSocketServer()
+    if (io) {
+      io.emit('message:deleted', { id: messageId })
+    }
+
+    return NextResponse.json(
+      { 
+        success: true,
+        message: 'Сообщение удалено'
+      },
+      { status: 200 }
+    )
+  } catch (error) {
+    console.error('Error deleting message:', error)
+    return NextResponse.json(
+      { error: 'Ошибка при удалении сообщения' },
       { status: 500 }
     )
   }

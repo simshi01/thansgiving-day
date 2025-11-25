@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io'
 import { Server as HTTPServer } from 'http'
-import { addMessage, getActiveMessages } from './db'
+import { addMessage, getActiveMessages, deleteMessage } from './db'
 import { validateMessage } from './moderation'
 
 let io: SocketIOServer | null = null
@@ -72,6 +72,32 @@ export function initializeSocketServer(server: HTTPServer) {
       } catch (error) {
         console.error('Error handling new message:', error)
         socket.emit('message:error', { error: 'Ошибка при отправке сообщения' })
+      }
+    })
+
+    // Обработка удаления сообщения
+    socket.on('message:delete', async (data) => {
+      try {
+        const { id } = data
+
+        if (!id || typeof id !== 'string') {
+          socket.emit('message:error', { error: 'ID сообщения обязателен' })
+          return
+        }
+
+        // Удаление из БД
+        const deleted = await deleteMessage(id)
+
+        if (!deleted) {
+          socket.emit('message:error', { error: 'Сообщение не найдено' })
+          return
+        }
+
+        // Отправка события удаления всем подключенным клиентам
+        io!.emit('message:deleted', { id })
+      } catch (error) {
+        console.error('Error deleting message:', error)
+        socket.emit('message:error', { error: 'Ошибка при удалении сообщения' })
       }
     })
 
