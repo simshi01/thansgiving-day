@@ -23,13 +23,25 @@ console.log(`   NEXT_PUBLIC_SOCKET_URL: ${process.env.NEXT_PUBLIC_SOCKET_URL || 
 
 // В production Next.js не требует передачи port в конструктор
 console.log('📦 Initializing Next.js...')
+console.log(`   Working directory: ${process.cwd()}`)
+console.log(`   Dev mode: ${dev}`)
+
 const app = next({ 
   dev,
 })
 const handle = app.getRequestHandler()
 
 console.log('⏳ Preparing Next.js app...')
-app.prepare().then(async () => {
+console.log(`   Dir: ${process.cwd()}`)
+
+// Добавляем таймаут для app.prepare() чтобы не зависать
+const preparePromise = app.prepare()
+const timeoutPromise = new Promise((_, reject) => {
+  setTimeout(() => reject(new Error('Next.js prepare() timeout after 30 seconds')), 30000)
+})
+
+Promise.race([preparePromise, timeoutPromise])
+  .then(async () => {
   console.log('✅ Next.js prepared successfully')
   
   // Инициализация БД в фоне (не блокируем старт сервера)
@@ -47,13 +59,22 @@ app.prepare().then(async () => {
     try {
       const parsedUrl = parse(req.url!, true)
       
-      // Healthcheck endpoint для Railway
+      // Healthcheck endpoint для Railway - отвечаем сразу
       if (parsedUrl.pathname === '/health' || parsedUrl.pathname === '/api/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }))
+        res.writeHead(200, { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        })
+        res.end(JSON.stringify({ 
+          status: 'ok', 
+          timestamp: new Date().toISOString(),
+          port: port,
+          hostname: hostname
+        }))
         return
       }
       
+      // Обработка запросов через Next.js
       await handle(req, res, parsedUrl)
     } catch (err) {
       console.error('Error occurred handling', req.url, err)
@@ -62,6 +83,16 @@ app.prepare().then(async () => {
         res.end('internal server error')
       }
     }
+  })
+  
+  // Добавляем обработчик ошибок для сервера
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${port} is already in use`)
+    } else {
+      console.error('❌ HTTP Server error:', err)
+    }
+    process.exit(1)
   })
 
   // Инициализация Socket.io
@@ -83,11 +114,13 @@ app.prepare().then(async () => {
       console.log(`✅ Healthcheck: http://${hostname}:${port}/health`)
       console.log(`✅ Application ready!`)
     })
-}).catch((err) => {
-  console.error('❌ Failed to start server:', err)
-  console.error('Error details:', err instanceof Error ? err.stack : err)
-  process.exit(1)
-})
+  })
+  .catch((err) => {
+    console.error('❌ Failed to start server:', err)
+    console.error('Error details:', err instanceof Error ? err.stack : err)
+    console.error('Error message:', err instanceof Error ? err.message : String(err))
+    process.exit(1)
+  })
 
 // Обработка необработанных ошибок
 process.on('unhandledRejection', (reason, promise) => {
