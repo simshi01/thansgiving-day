@@ -3,22 +3,48 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { initializeSocketServer } from './lib/socket-server'
+import { initializeDatabase } from './lib/db'
+
+// Устанавливаем NODE_ENV если не установлен (Railway обычно устанавливает автоматически)
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production'
+}
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || '0.0.0.0'
+// Railway автоматически устанавливает PORT, используем его
 const port = parseInt(process.env.PORT || '3000', 10)
 
-// Важно: Railway автоматически устанавливает PORT, используем его
-console.log(`Starting server on port ${port}`)
+console.log(`🚀 Starting server...`)
+console.log(`   Port: ${port}`)
+console.log(`   Hostname: ${hostname}`)
+console.log(`   Environment: ${process.env.NODE_ENV}`)
+console.log(`   Dev mode: ${dev}`)
+console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? 'set' : 'not set'}`)
+console.log(`   NEXT_PUBLIC_SOCKET_URL: ${process.env.NEXT_PUBLIC_SOCKET_URL || 'not set'}`)
 
+// В production Next.js не требует передачи port в конструктор
+console.log('📦 Initializing Next.js...')
 const app = next({ 
-  dev, 
-  hostname, 
-  port,
+  dev,
 })
 const handle = app.getRequestHandler()
 
-app.prepare().then(() => {
+console.log('⏳ Preparing Next.js app...')
+app.prepare().then(async () => {
+  console.log('✅ Next.js prepared successfully')
+  
+  // Инициализация БД в фоне (не блокируем старт сервера)
+  initializeDatabase().then((dbInitialized) => {
+    if (dbInitialized) {
+      console.log('✅ Database ready')
+    } else {
+      console.warn('⚠️  Database not available, some features may not work')
+    }
+  }).catch((error) => {
+    console.error('❌ Database initialization error:', error)
+  })
+  
   const httpServer = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url!, true)
@@ -51,16 +77,27 @@ app.prepare().then(() => {
 
   httpServer
     .once('error', (err) => {
-      console.error('Server error:', err)
+      console.error('❌ Server error:', err)
       process.exit(1)
     })
     .listen(port, hostname, () => {
-      console.log(`> Ready on http://${hostname}:${port}`)
-      console.log(`> Environment: ${process.env.NODE_ENV || 'development'}`)
-      console.log(`> Healthcheck available at http://${hostname}:${port}/health`)
+      console.log(`✅ Server listening on http://${hostname}:${port}`)
+      console.log(`✅ Healthcheck: http://${hostname}:${port}/health`)
+      console.log(`✅ Application ready!`)
     })
 }).catch((err) => {
-  console.error('Failed to start server:', err)
+  console.error('❌ Failed to start server:', err)
+  console.error('Error details:', err instanceof Error ? err.stack : err)
+  process.exit(1)
+})
+
+// Обработка необработанных ошибок
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error)
   process.exit(1)
 })
 

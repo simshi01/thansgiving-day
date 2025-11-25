@@ -45,22 +45,45 @@ export interface Message {
 
 // Создание таблицы (миграция)
 export async function createMessagesTable(): Promise<void> {
-  const db = getPool()
-  
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      text TEXT NOT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      is_active BOOLEAN DEFAULT true,
-      position_x INTEGER,
-      position_y INTEGER,
-      duration REAL
-    );
+  try {
+    const db = getPool()
+    
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        text TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        is_active BOOLEAN DEFAULT true,
+        position_x INTEGER,
+        position_y INTEGER,
+        duration REAL
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_messages_active ON messages(is_active) WHERE is_active = true;
-  `)
+      CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_active ON messages(is_active) WHERE is_active = true;
+    `)
+    
+    console.log('✅ Database table initialized successfully')
+  } catch (error) {
+    console.error('❌ Error creating database table:', error)
+    throw error
+  }
+}
+
+// Безопасная инициализация БД (не падает если БД недоступна)
+export async function initializeDatabase(): Promise<boolean> {
+  try {
+    if (!process.env.DATABASE_URL) {
+      console.warn('⚠️  DATABASE_URL not set, skipping database initialization')
+      return false
+    }
+
+    await createMessagesTable()
+    return true
+  } catch (error) {
+    console.error('❌ Failed to initialize database:', error)
+    return false
+  }
 }
 
 // Добавление нового сообщения
@@ -70,75 +93,90 @@ export async function addMessage(
   positionY: number,
   duration: number
 ): Promise<Message> {
-  const db = getPool()
-  
-  const result = await db.query<Message>(
-    `INSERT INTO messages (text, position_x, position_y, duration)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, text, created_at as "createdAt", is_active as "isActive", 
-               position_x as "positionX", position_y as "positionY", duration`,
-    [text, positionX, positionY, duration]
-  )
+  try {
+    const db = getPool()
+    
+    const result = await db.query<Message>(
+      `INSERT INTO messages (text, position_x, position_y, duration)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, text, created_at as "createdAt", is_active as "isActive", 
+                 position_x as "positionX", position_y as "positionY", duration`,
+      [text, positionX, positionY, duration]
+    )
 
-  return {
-    id: result.rows[0].id,
-    text: result.rows[0].text,
-    createdAt: result.rows[0].createdAt,
-    isActive: result.rows[0].isActive,
-    positionX: result.rows[0].positionX,
-    positionY: result.rows[0].positionY,
-    duration: result.rows[0].duration,
+    return {
+      id: result.rows[0].id,
+      text: result.rows[0].text,
+      createdAt: result.rows[0].createdAt,
+      isActive: result.rows[0].isActive,
+      positionX: result.rows[0].positionX,
+      positionY: result.rows[0].positionY,
+      duration: result.rows[0].duration,
+    }
+  } catch (error) {
+    console.error('Error adding message to database:', error)
+    throw error
   }
 }
 
 // Получение последних сообщений
 export async function getRecentMessages(limit: number = 100): Promise<Message[]> {
-  const db = getPool()
-  
-  const result = await db.query<Message>(
-    `SELECT id, text, created_at as "createdAt", is_active as "isActive",
-            position_x as "positionX", position_y as "positionY", duration
-     FROM messages
-     WHERE is_active = true
-     ORDER BY created_at DESC
-     LIMIT $1`,
-    [limit]
-  )
+  try {
+    const db = getPool()
+    
+    const result = await db.query<Message>(
+      `SELECT id, text, created_at as "createdAt", is_active as "isActive",
+              position_x as "positionX", position_y as "positionY", duration
+       FROM messages
+       WHERE is_active = true
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    )
 
-  return result.rows.map(row => ({
-    id: row.id,
-    text: row.text,
-    createdAt: row.createdAt,
-    isActive: row.isActive,
-    positionX: row.positionX,
-    positionY: row.positionY,
-    duration: row.duration,
-  }))
+    return result.rows.map(row => ({
+      id: row.id,
+      text: row.text,
+      createdAt: row.createdAt,
+      isActive: row.isActive,
+      positionX: row.positionX,
+      positionY: row.positionY,
+      duration: row.duration,
+    }))
+  } catch (error) {
+    console.error('Error fetching recent messages:', error)
+    throw error
+  }
 }
 
 // Получение активных сообщений (которые сейчас показываются)
 export async function getActiveMessages(): Promise<Message[]> {
-  const db = getPool()
-  
-  // Получаем сообщения за последние 30 секунд (активные)
-  const result = await db.query<Message>(
-    `SELECT id, text, created_at as "createdAt", is_active as "isActive",
-            position_x as "positionX", position_y as "positionY", duration
-     FROM messages
-     WHERE is_active = true
-       AND created_at > NOW() - INTERVAL '30 seconds'
-     ORDER BY created_at DESC`
-  )
+  try {
+    const db = getPool()
+    
+    // Получаем сообщения за последние 30 секунд (активные)
+    const result = await db.query<Message>(
+      `SELECT id, text, created_at as "createdAt", is_active as "isActive",
+              position_x as "positionX", position_y as "positionY", duration
+       FROM messages
+       WHERE is_active = true
+         AND created_at > NOW() - INTERVAL '30 seconds'
+       ORDER BY created_at DESC`
+    )
 
-  return result.rows.map(row => ({
-    id: row.id,
-    text: row.text,
-    createdAt: row.createdAt,
-    isActive: row.isActive,
-    positionX: row.positionX,
-    positionY: row.positionY,
-    duration: row.duration,
-  }))
+    return result.rows.map(row => ({
+      id: row.id,
+      text: row.text,
+      createdAt: row.createdAt,
+      isActive: row.isActive,
+      positionX: row.positionX,
+      positionY: row.positionY,
+      duration: row.duration,
+    }))
+  } catch (error) {
+    console.error('Error fetching active messages:', error)
+    throw error
+  }
 }
 
 // Деактивация старых сообщений (опционально, для очистки)

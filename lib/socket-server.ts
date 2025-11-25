@@ -36,7 +36,8 @@ export function initializeSocketServer(server: HTTPServer) {
         })
       } catch (error) {
         console.error('Error syncing messages:', error)
-        socket.emit('sync:error', { error: 'Ошибка синхронизации' })
+        // Возвращаем пустой массив вместо ошибки, чтобы клиент мог работать
+        socket.emit('sync:response', { messages: [] })
       }
     })
 
