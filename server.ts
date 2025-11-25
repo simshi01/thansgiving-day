@@ -5,12 +5,10 @@ import next from 'next'
 import { initializeSocketServer } from './lib/socket-server'
 import { initializeDatabase } from './lib/db'
 
-// Устанавливаем NODE_ENV если не установлен (Railway обычно устанавливает автоматически)
-if (!process.env.NODE_ENV) {
-  process.env.NODE_ENV = 'production'
-}
-
-const dev = process.env.NODE_ENV !== 'production'
+// Railway обычно устанавливает NODE_ENV автоматически
+// Используем значение по умолчанию 'production' если не установлено
+const nodeEnv = process.env.NODE_ENV || 'production'
+const dev = nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || '0.0.0.0'
 // Railway автоматически устанавливает PORT, используем его
 const port = parseInt(process.env.PORT || '3000', 10)
@@ -18,7 +16,7 @@ const port = parseInt(process.env.PORT || '3000', 10)
 console.log(`🚀 Starting server...`)
 console.log(`   Port: ${port}`)
 console.log(`   Hostname: ${hostname}`)
-console.log(`   Environment: ${process.env.NODE_ENV}`)
+console.log(`   Environment: ${nodeEnv}`)
 console.log(`   Dev mode: ${dev}`)
 console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? 'set' : 'not set'}`)
 console.log(`   NEXT_PUBLIC_SOCKET_URL: ${process.env.NEXT_PUBLIC_SOCKET_URL || 'not set'}`)
