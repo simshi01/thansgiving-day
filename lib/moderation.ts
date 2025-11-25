@@ -60,52 +60,56 @@ const allowedWords = [
   'любовь', 'любви', 'любовью',
 ]
 
+// Транслитерация английских букв в русские (для обнаружения обходов)
+function transliterateToRussian(text: string): string {
+  const translitMap: { [key: string]: string } = {
+    'a': 'а', 'b': 'б', 'c': 'с', 'd': 'д', 'e': 'е',
+    'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'ж',
+    'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
+    'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
+    'u': 'у', 'v': 'в', 'w': 'в', 'x': 'х', 'y': 'у',
+    'z': 'з',
+    // Многосимвольные комбинации
+    'zh': 'ж', 'ch': 'ч', 'sh': 'ш', 'sch': 'щ',
+    'yu': 'ю', 'ya': 'я', 'yo': 'ё',
+  }
+  
+  let result = text.toLowerCase()
+  
+  // Сначала заменяем многосимвольные комбинации
+  for (const [from, to] of Object.entries(translitMap)) {
+    if (from.length > 1) {
+      result = result.replace(new RegExp(from, 'gi'), to)
+    }
+  }
+  
+  // Затем одиночные буквы
+  for (const [from, to] of Object.entries(translitMap)) {
+    if (from.length === 1) {
+      result = result.replace(new RegExp(from, 'gi'), to)
+    }
+  }
+  
+  return result
+}
+
 // Нормализация текста (удаление обходов)
 function normalizeText(text: string): string {
   // Удаляем пробелы внутри слов (х у й -> хуй)
   let normalized = text.replace(/(\S)\s+(\S)/g, '$1$2')
   
+  // Транслитерируем английские буквы в русские
+  normalized = transliterateToRussian(normalized)
+  
   // Заменяем обходы символов на обычные буквы
   const replacements: { [key: string]: string } = {
-    'а': 'а', 'a': 'а', '@': 'а', '4': 'а',
-    'б': 'б', 'b': 'б', '6': 'б',
-    'в': 'в', 'v': 'в', 'b': 'в',
-    'г': 'г', 'g': 'г',
-    'д': 'д', 'd': 'д',
-    'е': 'е', 'e': 'е', 'ё': 'ё',
-    'ж': 'ж', 'zh': 'ж',
-    'з': 'з', 'z': 'з', '3': 'з',
-    'и': 'и', 'i': 'и', '1': 'и',
-    'й': 'й', 'y': 'й',
-    'к': 'к', 'k': 'к',
-    'л': 'л', 'l': 'л',
-    'м': 'м', 'm': 'м',
-    'н': 'н', 'n': 'н',
-    'о': 'о', 'o': 'о', '0': 'о',
-    'п': 'п', 'p': 'п',
-    'р': 'р', 'r': 'р',
-    'с': 'с', 'c': 'с',
-    'т': 'т', 't': 'т',
-    'у': 'у', 'u': 'у', 'y': 'у',
-    'ф': 'ф', 'f': 'ф',
-    'х': 'х', 'x': 'х', 'h': 'х',
-    'ц': 'ц', 'c': 'ц',
-    'ч': 'ч', 'ch': 'ч',
-    'ш': 'ш', 'sh': 'ш',
-    'щ': 'щ', 'sch': 'щ',
-    'ъ': 'ъ',
-    'ы': 'ы',
-    'ь': 'ь',
-    'э': 'э', 'e': 'э',
-    'ю': 'ю', 'yu': 'ю',
-    'я': 'я', 'ya': 'я',
-    '*': '', '_': '', '-': '', '.': '', '!': '', '?': '',
+    '@': 'а', '4': 'а', '6': 'б', '3': 'з', '1': 'и', '0': 'о',
+    '*': '', '_': '', '-': '', '.': '', '!': '', '?': '', '#': '',
   }
   
-  // Простая замена символов обхода
   normalized = normalized.toLowerCase()
   for (const [from, to] of Object.entries(replacements)) {
-    normalized = normalized.replace(new RegExp(from, 'gi'), to)
+    normalized = normalized.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), to)
   }
   
   return normalized
@@ -150,6 +154,59 @@ function containsAllowedPhrase(text: string): boolean {
   return false
 }
 
+// Проверка контекста: есть ли запрещенное слово в тексте, но не в разрешенной фразе
+function hasForbiddenWordInContext(text: string, words: string[]): boolean {
+  const lowerText = text.toLowerCase()
+  const normalizedText = normalizeText(text)
+  const normalizedLower = normalizedText.toLowerCase()
+  
+  // Проверяем каждое запрещенное слово
+  for (const forbiddenWord of forbiddenWords) {
+    // Ищем запрещенное слово в нормализованном тексте
+    const escapedWord = forbiddenWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const wordBoundaryRegex = new RegExp(`\\b${escapedWord}\\b`, 'i')
+    
+    if (wordBoundaryRegex.test(normalizedLower)) {
+      // Проверяем что это не часть разрешенного слова
+      if (isAllowedWord(forbiddenWord)) {
+        continue
+      }
+      
+      // Проверяем что это не часть разрешенной фразы
+      let isInAllowedPhrase = false
+      for (const phrase of allowedPhrases) {
+        if (phrase.includes(forbiddenWord)) {
+          isInAllowedPhrase = true
+          break
+        }
+      }
+      
+      if (isInAllowedPhrase) {
+        continue
+      }
+      
+      // Проверяем контекст: если запрещенное слово является частью какого-то слова в тексте
+      // Например: "блядская" содержит "бляд" - блокируем
+      // Но "мама" содержит "ма" - это нормально (если "ма" не в списке запрещенных)
+      let isPartOfAllowedWord = false
+      for (const word of words) {
+        // Если слово содержит запрещенное слово, но само является разрешенным
+        if (word.includes(forbiddenWord) && isAllowedWord(word)) {
+          isPartOfAllowedWord = true
+          break
+        }
+      }
+      
+      // Если запрещенное слово есть, но не является частью разрешенного слова или фразы - блокируем
+      if (!isPartOfAllowedWord) {
+        return true
+      }
+    }
+  }
+  
+  return false
+}
+
 // Функция проверки текста на наличие запрещенных слов
 export function moderateText(text: string): { isValid: boolean; moderatedText?: string; reason?: string } {
   const originalText = text.trim()
@@ -158,12 +215,20 @@ export function moderateText(text: string): { isValid: boolean; moderatedText?: 
   // Проверяем разрешенные фразы сначала
   const hasAllowedPhrase = containsAllowedPhrase(lowerText)
   
-  // Нормализуем текст для проверки обходов
+  // Нормализуем текст для проверки обходов (включая транслитерацию)
   const normalizedText = normalizeText(originalText)
   const normalizedLower = normalizedText.toLowerCase()
   
   // Токенизируем текст (разбиваем на слова)
   const words = tokenizeText(originalText)
+  
+  // Проверка контекста: если есть запрещенное слово рядом с разрешенным, но не в разрешенной фразе
+  if (hasForbiddenWordInContext(originalText, words)) {
+    return { 
+      isValid: false, 
+      reason: `Текст содержит недопустимые слова` 
+    }
+  }
   
   // Проверяем каждое слово на точное совпадение с запрещенными
   for (const word of words) {
@@ -239,7 +304,6 @@ export function moderateText(text: string): { isValid: boolean; moderatedText?: 
   // Дополнительная проверка: ищем запрещенные слова в нормализованном тексте с границами слов
   for (const forbiddenWord of forbiddenWords) {
     // Используем регулярное выражение для поиска слова с границами
-    // Экранируем специальные символы в слове
     const escapedWord = forbiddenWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const wordBoundaryRegex = new RegExp(`\\b${escapedWord}\\b`, 'i')
     
