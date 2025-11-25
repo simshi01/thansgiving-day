@@ -4,15 +4,27 @@ import { validateMessage } from '@/lib/moderation'
 
 // Инициализация таблицы при первом запросе
 let tableInitialized = false
+let tableInitializationInProgress = false
 
 async function ensureTableExists() {
-  if (!tableInitialized) {
-    try {
-      await createMessagesTable()
-      tableInitialized = true
-    } catch (error) {
-      console.error('Error creating table:', error)
-    }
+  if (tableInitialized) return
+  
+  if (tableInitializationInProgress) {
+    // Ждем завершения инициализации
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    return
+  }
+
+  tableInitializationInProgress = true
+  try {
+    await createMessagesTable()
+    tableInitialized = true
+    console.log('Database table initialized successfully')
+  } catch (error) {
+    console.error('Error creating table:', error)
+    // Не бросаем ошибку дальше, чтобы API мог работать
+  } finally {
+    tableInitializationInProgress = false
   }
 }
 

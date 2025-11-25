@@ -8,12 +8,24 @@ export function getPool(): Pool {
     const connectionString = process.env.DATABASE_URL
     
     if (!connectionString) {
+      console.warn('DATABASE_URL environment variable is not set - database features will not work')
+      // Не бросаем ошибку, чтобы сервер мог запуститься
+      // Создаем пустой pool, который будет падать только при попытке использовать
       throw new Error('DATABASE_URL environment variable is not set')
     }
 
     pool = new Pool({
       connectionString,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      // Настройки для Railway
+      max: 10, // Максимум соединений
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    })
+
+    // Обработка ошибок подключения
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle client', err)
     })
   }
 

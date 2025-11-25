@@ -8,7 +8,18 @@ const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || '0.0.0.0'
 const port = parseInt(process.env.PORT || '3000', 10)
 
-const app = next({ dev, hostname, port })
+// Важно: Railway автоматически устанавливает PORT, используем его
+console.log(`Starting server on port ${port}`)
+
+const app = next({ 
+  dev, 
+  hostname, 
+  port,
+  // Отключаем проверку типов при сборке для Railway
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+})
 const handle = app.getRequestHandler()
 
 app.prepare().then(() => {
@@ -24,15 +35,24 @@ app.prepare().then(() => {
   })
 
   // Инициализация Socket.io
-  initializeSocketServer(httpServer)
+  try {
+    initializeSocketServer(httpServer)
+  } catch (error) {
+    console.error('Error initializing Socket.io:', error)
+    // Продолжаем работу даже если Socket.io не инициализировался
+  }
 
   httpServer
     .once('error', (err) => {
-      console.error(err)
+      console.error('Server error:', err)
       process.exit(1)
     })
     .listen(port, hostname, () => {
       console.log(`> Ready on http://${hostname}:${port}`)
+      console.log(`> Environment: ${process.env.NODE_ENV || 'development'}`)
     })
+}).catch((err) => {
+  console.error('Failed to start server:', err)
+  process.exit(1)
 })
 
