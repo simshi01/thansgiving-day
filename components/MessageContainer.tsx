@@ -49,8 +49,15 @@ function checkCollision(
   )
 }
 
+interface MessageFromDB {
+  id: string
+  text: string
+  duration: number
+}
+
 export default function MessageContainer({ messages: testMessages, maxConcurrent = 4 }: MessageContainerProps) {
   const [activeMessages, setActiveMessages] = useState<Message[]>([])
+  const [messageQueue, setMessageQueue] = useState<MessageFromDB[]>([])
   const [socket, setSocket] = useState<Socket | null>(null)
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
   const [isMobile, setIsMobile] = useState(false)
@@ -101,33 +108,35 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     })
 
     newSocket.on('sync:response', (data: { messages: Array<{ id: string; text: string; positionX: number; positionY: number; duration: number }> }) => {
-      // Получаем активные сообщения с сервера
-      const syncedMessages = data.messages.map(msg => ({
+      // Добавляем новые сообщения в очередь вместо прямого показа
+      const newMessages: MessageFromDB[] = data.messages.map(msg => ({
         id: msg.id,
         text: msg.text,
-        x: msg.positionX || 0,
-        y: msg.positionY || 0,
-        duration: msg.duration || 5,
+        duration: msg.duration || calculateDuration(msg.text),
       }))
-      setActiveMessages(syncedMessages)
+      
+      setMessageQueue((prev) => {
+        const existingIds = new Set(prev.map(m => m.id))
+        const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id))
+        return [...prev, ...uniqueNewMessages]
+      })
     })
 
     newSocket.on('message:new', (data: { id: string; text: string; positionX: number; positionY: number; duration: number }) => {
-      // Новое сообщение от сервера
-      const newMessage: Message = {
+      // Новое сообщение от сервера - добавляем в очередь
+      const newMessage: MessageFromDB = {
         id: data.id,
         text: data.text,
-        x: data.positionX,
-        y: data.positionY,
-        duration: data.duration,
+        duration: data.duration || calculateDuration(data.text),
       }
       
-      setActiveMessages((prev) => {
-        // Проверяем, нет ли уже такого сообщения
+      setMessageQueue((prev) => {
+        // Проверяем, нет ли уже такого сообщения в очереди
         if (prev.some(msg => msg.id === newMessage.id)) {
           return prev
         }
-        return [...prev, newMessage]
+        // Добавляем в начало очереди для приоритетного показа
+        return [newMessage, ...prev]
       })
     })
 
@@ -137,39 +146,161 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
 
     setSocket(newSocket)
 
-    // Загрузка последних сообщений через API
-    fetch('/api/messages?limit=50')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.messages) {
-          const apiMessages = data.messages
-            .filter((msg: any) => {
-              // Берем только сообщения за последние 30 секунд
-              const createdAt = new Date(msg.createdAt)
-              const now = new Date()
-              return (now.getTime() - createdAt.getTime()) < 30000
-            })
-            .map((msg: any) => ({
-              id: msg.id,
-              text: msg.text,
-              x: msg.positionX || 0,
-              y: msg.positionY || 0,
-              duration: msg.duration || 5,
-            }))
-          setActiveMessages(apiMessages)
-        }
-      })
-      .catch(err => console.error('Error fetching messages:', err))
+    // Загрузка последних сообщений через API будет происходить в useEffect выше
 
     return () => {
       newSocket.close()
     }
   }, [])
 
+  // Генерация случайных позиций с учетом активных сообщений
+  const generateRandomPosition = useCallback((existingMessages: Message[]): { x: number; y: number } => {
+    const padding = 50
+    const messageWidth = isMobile ? 200 : 350
+    const messageHeight = isMobile ? 100 : 150
+    const maxAttempts = 50
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const x = Math.random() * (dimensions.width - messageWidth - padding * 2) + padding
+      const y = Math.random() * (dimensions.height - messageHeight - padding * 2) + padding
+      
+      // Проверяем пересечение с существующими сообщениями
+      let hasCollision = false
+      for (const msg of existingMessages) {
+        const msgWidth = isMobile ? 200 : 350
+        const msgHeight = isMobile ? 100 : 150
+        if (checkCollision(x, y, messageWidth, messageHeight, msg.x, msg.y, msgWidth, msgHeight, padding)) {
+          hasCollision = true
+          break
+        }
+      }
+      
+      if (!hasCollision) {
+        return { x, y }
+      }
+    }
+    
+    // Если не удалось найти свободное место, возвращаем случайную позицию
+    return {
+      x: Math.random() * (dimensions.width - messageWidth) + padding,
+      y: Math.random() * (dimensions.height - messageHeight) + padding,
+    }
+  }, [dimensions.width, dimensions.height, isMobile])
+
+  // Показ следующего сообщения из очереди
+  const showNextMessage = useCallback(() => {
+    setMessageQueue((queue) => {
+      if (queue.length === 0) return queue
+      
+      setActiveMessages((currentActive) => {
+        if (currentActive.length >= maxConcurrent) {
+          return currentActive
+        }
+        
+        const nextMessage = queue[0]
+        
+        // Генерируем новые позиции для этого показа с учетом текущих активных сообщений
+        const position = generateRandomPosition(currentActive)
+        
+        // Создаем уникальный ID для этого показа (сообщение + timestamp)
+        const displayId = `${nextMessage.id}-${Date.now()}`
+        
+        const messageToShow: Message = {
+          id: displayId,
+          text: nextMessage.text,
+          x: position.x,
+          y: position.y,
+          duration: nextMessage.duration,
+        }
+        
+        // Возвращаем сообщение в конец очереди для повторного показа
+        setTimeout(() => {
+          setMessageQueue((currentQueue) => [...currentQueue, nextMessage])
+        }, 100)
+        
+        return [...currentActive, messageToShow]
+      })
+      
+      return queue.slice(1)
+    })
+  }, [maxConcurrent, generateRandomPosition])
+
   // Удаление сообщения
   const handleMessageComplete = useCallback((id: string) => {
-    setActiveMessages((prev) => prev.filter((msg) => msg.id !== id))
+    setActiveMessages((prev) => {
+      const updated = prev.filter((msg) => msg.id !== id)
+      // После удаления показываем следующее сообщение
+      setTimeout(() => showNextMessage(), 500)
+      return updated
+    })
+  }, [showNextMessage])
+
+  // Загрузка сообщений из БД и заполнение очереди
+  const loadMessagesFromDB = useCallback(async () => {
+    try {
+      const response = await fetch('/api/messages?limit=100')
+      const data = await response.json()
+      
+      if (data.success && data.messages && data.messages.length > 0) {
+        const messages: MessageFromDB[] = data.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.text,
+          duration: msg.duration || calculateDuration(msg.text),
+        }))
+        
+        // Перемешиваем сообщения для случайного порядка
+        const shuffled = messages.sort(() => Math.random() - 0.5)
+        setMessageQueue((prev) => {
+          // Добавляем только новые сообщения
+          const existingIds = new Set(prev.map(m => m.id))
+          const newMessages = shuffled.filter(m => !existingIds.has(m.id))
+          return [...prev, ...newMessages]
+        })
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error)
+    }
   }, [])
+
+  // Инициализация очереди и начало показа сообщений
+  useEffect(() => {
+    if (dimensions.width > 0 && dimensions.height > 0) {
+      loadMessagesFromDB()
+    }
+  }, [dimensions.width, dimensions.height, loadMessagesFromDB])
+
+  // Автоматический показ сообщений из очереди
+  useEffect(() => {
+    if (messageQueue.length === 0) {
+      return
+    }
+
+    // Показываем следующее сообщение с задержкой, если есть место
+    const timer = setTimeout(() => {
+      setActiveMessages((current) => {
+        if (current.length >= maxConcurrent) {
+          return current
+        }
+        // showNextMessage обновит activeMessages внутри себя
+        return current
+      })
+      // Проверяем еще раз перед вызовом
+      if (activeMessages.length < maxConcurrent) {
+        showNextMessage()
+      }
+    }, 2000) // Задержка 2 секунды между показами
+
+    return () => clearTimeout(timer)
+  }, [messageQueue.length, activeMessages.length, maxConcurrent, showNextMessage])
+
+  // Периодическая загрузка новых сообщений из БД
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadMessagesFromDB()
+    }, 30000) // Обновляем каждые 30 секунд
+
+    return () => clearInterval(interval)
+  }, [loadMessagesFromDB])
 
   // Fallback на тестовые данные, если нет подключения к серверу
   useEffect(() => {
