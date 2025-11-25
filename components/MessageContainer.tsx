@@ -93,6 +93,98 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     return () => window.removeEventListener('resize', updateDimensions)
   }, [])
 
+  // Генерация случайных позиций с учетом активных сообщений
+  const generateRandomPosition = useCallback((existingMessages: Message[]): { x: number; y: number } => {
+    const padding = 50
+    const messageWidth = isMobile ? 200 : 350
+    const messageHeight = isMobile ? 100 : 150
+    const maxAttempts = 50
+    
+    // Если размеры еще не определены, возвращаем случайную позицию
+    if (dimensions.width === 0 || dimensions.height === 0) {
+      return {
+        x: Math.random() * 500 + 50,
+        y: Math.random() * 500 + 50,
+      }
+    }
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const x = Math.random() * (dimensions.width - messageWidth - padding * 2) + padding
+      const y = Math.random() * (dimensions.height - messageHeight - padding * 2) + padding
+      
+      // Проверяем пересечение с существующими сообщениями
+      let hasCollision = false
+      for (const msg of existingMessages) {
+        const msgWidth = isMobile ? 200 : 350
+        const msgHeight = isMobile ? 100 : 150
+        if (checkCollision(x, y, messageWidth, messageHeight, msg.x, msg.y, msgWidth, msgHeight, padding)) {
+          hasCollision = true
+          break
+        }
+      }
+      
+      if (!hasCollision) {
+        return { x, y }
+      }
+    }
+    
+    // Если не удалось найти свободное место, возвращаем случайную позицию
+    return {
+      x: Math.random() * (dimensions.width - messageWidth) + padding,
+      y: Math.random() * (dimensions.height - messageHeight) + padding,
+    }
+  }, [dimensions.width, dimensions.height, isMobile])
+  
+  // Обработчик новых сообщений через Socket.io
+  const handleNewMessage = useCallback((data: { id: string; text: string; positionX: number; positionY: number; duration: number }) => {
+    const newMessage: MessageFromDB = {
+      id: data.id,
+      text: data.text,
+      duration: data.duration || calculateDuration(data.text),
+    }
+    
+    setActiveMessages((currentActive) => {
+      // Проверяем, нет ли уже такого сообщения
+      if (currentActive.some(msg => msg.id.startsWith(newMessage.id))) {
+        return currentActive
+      }
+      
+      // Если есть место, показываем сразу
+      if (currentActive.length < maxConcurrent) {
+        const position = generateRandomPosition(currentActive)
+        const displayId = `${newMessage.id}-${Date.now()}`
+        
+        const messageToShow: Message = {
+          id: displayId,
+          text: newMessage.text,
+          x: position.x,
+          y: position.y,
+          duration: newMessage.duration,
+        }
+        
+        // Также добавляем в очередь для повторного показа
+        setMessageQueue((prev) => {
+          if (prev.some(msg => msg.id === newMessage.id)) {
+            return prev
+          }
+          return [...prev, newMessage]
+        })
+        
+        return [...currentActive, messageToShow]
+      }
+      
+      // Если нет места, добавляем в начало очереди
+      setMessageQueue((prev) => {
+        if (prev.some(msg => msg.id === newMessage.id)) {
+          return prev
+        }
+        return [newMessage, ...prev]
+      })
+      
+      return currentActive
+    })
+  }, [maxConcurrent, generateRandomPosition])
+
   // Подключение к Socket.io
   useEffect(() => {
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
@@ -122,23 +214,7 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       })
     })
 
-    newSocket.on('message:new', (data: { id: string; text: string; positionX: number; positionY: number; duration: number }) => {
-      // Новое сообщение от сервера - добавляем в очередь
-      const newMessage: MessageFromDB = {
-        id: data.id,
-        text: data.text,
-        duration: data.duration || calculateDuration(data.text),
-      }
-      
-      setMessageQueue((prev) => {
-        // Проверяем, нет ли уже такого сообщения в очереди
-        if (prev.some(msg => msg.id === newMessage.id)) {
-          return prev
-        }
-        // Добавляем в начало очереди для приоритетного показа
-        return [newMessage, ...prev]
-      })
-    })
+    newSocket.on('message:new', handleNewMessage)
 
     newSocket.on('disconnect', () => {
       console.log('Disconnected from server')
@@ -149,43 +225,10 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     // Загрузка последних сообщений через API будет происходить в useEffect выше
 
     return () => {
+      newSocket.off('message:new', handleNewMessage)
       newSocket.close()
     }
-  }, [])
-
-  // Генерация случайных позиций с учетом активных сообщений
-  const generateRandomPosition = useCallback((existingMessages: Message[]): { x: number; y: number } => {
-    const padding = 50
-    const messageWidth = isMobile ? 200 : 350
-    const messageHeight = isMobile ? 100 : 150
-    const maxAttempts = 50
-    
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const x = Math.random() * (dimensions.width - messageWidth - padding * 2) + padding
-      const y = Math.random() * (dimensions.height - messageHeight - padding * 2) + padding
-      
-      // Проверяем пересечение с существующими сообщениями
-      let hasCollision = false
-      for (const msg of existingMessages) {
-        const msgWidth = isMobile ? 200 : 350
-        const msgHeight = isMobile ? 100 : 150
-        if (checkCollision(x, y, messageWidth, messageHeight, msg.x, msg.y, msgWidth, msgHeight, padding)) {
-          hasCollision = true
-          break
-        }
-      }
-      
-      if (!hasCollision) {
-        return { x, y }
-      }
-    }
-    
-    // Если не удалось найти свободное место, возвращаем случайную позицию
-    return {
-      x: Math.random() * (dimensions.width - messageWidth) + padding,
-      y: Math.random() * (dimensions.height - messageHeight) + padding,
-    }
-  }, [dimensions.width, dimensions.height, isMobile])
+  }, [handleNewMessage])
 
   // Показ следующего сообщения из очереди
   const showNextMessage = useCallback(() => {
