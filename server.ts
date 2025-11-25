@@ -15,10 +15,6 @@ const app = next({
   dev, 
   hostname, 
   port,
-  // Отключаем проверку типов при сборке для Railway
-  typescript: {
-    ignoreBuildErrors: false,
-  },
 })
 const handle = app.getRequestHandler()
 
