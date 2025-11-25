@@ -9,7 +9,8 @@ import { initializeDatabase } from './lib/db'
 // Используем значение по умолчанию 'production' если не установлено
 const nodeEnv = process.env.NODE_ENV || 'production'
 const dev = nodeEnv !== 'production'
-const hostname = process.env.HOSTNAME || '0.0.0.0'
+// В Railway всегда слушаем на 0.0.0.0 чтобы принимать внешние подключения
+const hostname = '0.0.0.0'
 // Railway автоматически устанавливает PORT, используем его
 const port = parseInt(process.env.PORT || '3000', 10)
 
