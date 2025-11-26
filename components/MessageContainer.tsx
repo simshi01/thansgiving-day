@@ -35,12 +35,13 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
   const [isMobile, setIsMobile] = useState(false)
   const [scale, setScale] = useState(1)
   const [isInitialized, setIsInitialized] = useState(false)
-  const [currentMessageIndex, setCurrentMessageIndex] = useState(0) // индекс текущего сообщения в цикле
   const [maxConcurrentMessages, setMaxConcurrentMessages] = useState<number>(MESSAGE_DISPLAY.MAX_CONCURRENT)
 
   const scheduleTimerRef = useRef<NodeJS.Timeout | null>(null)
   const cycleStartTimeRef = useRef<number>(0)
   const spawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const currentMessageIndexRef = useRef<number>(0) // индекс текущего сообщения в цикле (используем ref вместо state)
+  const isSchedulerRunningRef = useRef<boolean>(false) // флаг, чтобы не запускать scheduler повторно
 
   // Получаем размеры экрана
   useEffect(() => {
@@ -171,10 +172,13 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       return
     }
 
-    // Останавливаем предыдущие таймеры
-    if (spawnIntervalRef.current) {
-      clearInterval(spawnIntervalRef.current)
+    // Проверяем, не запущен ли уже scheduler
+    if (isSchedulerRunningRef.current) {
+      console.log('Scheduler already running, skipping')
+      return
     }
+
+    isSchedulerRunningRef.current = true
 
     console.log(`Starting scheduler with ${schedule.length} messages, max concurrent: ${maxConcurrentMessages}`)
 
@@ -183,10 +187,10 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       if (schedule.length === 0) return
 
       // Получаем следующее сообщение из цикла
-      const messageToShow = schedule[currentMessageIndex % schedule.length]
+      const messageToShow = schedule[currentMessageIndexRef.current % schedule.length]
 
       // Увеличиваем индекс для следующего раза
-      setCurrentMessageIndex(prev => (prev + 1) % schedule.length)
+      currentMessageIndexRef.current = (currentMessageIndexRef.current + 1) % schedule.length
 
       // Показываем сообщение
       showScheduledMessage(messageToShow)
@@ -199,7 +203,7 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     }
 
     // Интервал больше не нужен - новые сообщения появятся через handleMessageComplete
-  }, [schedule, maxConcurrentMessages, currentMessageIndex, showScheduledMessage])
+  }, [schedule, maxConcurrentMessages, showScheduledMessage])
 
   // Удаление завершившегося сообщения и показ следующего
   const handleMessageComplete = useCallback((id: string) => {
@@ -207,15 +211,15 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
 
     // Когда сообщение исчезает, показываем следующее из цикла
     if (schedule.length > 0) {
-      const messageToShow = schedule[currentMessageIndex % schedule.length]
-      setCurrentMessageIndex(prev => (prev + 1) % schedule.length)
+      const messageToShow = schedule[currentMessageIndexRef.current % schedule.length]
+      currentMessageIndexRef.current = (currentMessageIndexRef.current + 1) % schedule.length
 
       // Небольшая задержка перед показом следующего
       setTimeout(() => {
         showScheduledMessage(messageToShow)
       }, 300)
     }
-  }, [schedule, currentMessageIndex, showScheduledMessage])
+  }, [schedule, showScheduledMessage])
 
   // Инициализация
   useEffect(() => {
@@ -240,7 +244,7 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
 
   // Запуск планировщика после инициализации
   useEffect(() => {
-    if (isInitialized && schedule.length > 0) {
+    if (isInitialized && schedule.length > 0 && !isSchedulerRunningRef.current) {
       startScheduler()
     }
 
@@ -251,6 +255,8 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       if (spawnIntervalRef.current) {
         clearInterval(spawnIntervalRef.current)
       }
+      // Сбрасываем флаг при размонтировании
+      isSchedulerRunningRef.current = false
     }
   }, [isInitialized, schedule, startScheduler])
 
