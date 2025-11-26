@@ -69,9 +69,19 @@ export async function POST(request: NextRequest) {
       duration || 5
     )
 
+    // Отправка события через Socket.io всем подключенным клиентам
+    const io = getSocketServer()
+    if (io) {
+      io.emit('message:new', {
+        id: message.id,
+        text: message.text,
+        duration: message.duration,
+      })
+    }
+
     return NextResponse.json(
-      { 
-        success: true, 
+      {
+        success: true,
         message: {
           id: message.id,
           text: message.text,
