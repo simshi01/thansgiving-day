@@ -45,6 +45,24 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
   const isSchedulerRunningRef = useRef<boolean>(false) // флаг, чтобы не запускать scheduler повторно
   const socketRef = useRef<Socket | null>(null)
 
+  // Refs для актуальных значений в socket обработчиках
+  const maxConcurrentRef = useRef(maxConcurrentMessages)
+  const dimensionsRef = useRef(dimensions)
+  const isMobileRef = useRef(isMobile)
+
+  // Обновляем refs при изменении значений
+  useEffect(() => {
+    maxConcurrentRef.current = maxConcurrentMessages
+  }, [maxConcurrentMessages])
+
+  useEffect(() => {
+    dimensionsRef.current = dimensions
+  }, [dimensions])
+
+  useEffect(() => {
+    isMobileRef.current = isMobile
+  }, [isMobile])
+
   // Получаем размеры экрана
   useEffect(() => {
     const updateDimensions = () => {
@@ -333,18 +351,33 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       setSchedule(prev => [...prev, newMessage])
 
       // Показываем сразу (если есть место на экране)
-      // Используем setActiveMessages с prev для актуального значения
       setActiveMessages(prevActive => {
-        if (prevActive.length < maxConcurrentMessages) {
-          // Генерируем позицию и показываем сообщение
-          const position = generateMessagePosition()
+        // Используем refs для актуальных значений
+        const currentMax = maxConcurrentRef.current
+
+        if (prevActive.length < currentMax) {
+          // Генерируем позицию напрямую здесь, чтобы не зависеть от внешней функции
+          const padding = 50
+          const currentDimensions = dimensionsRef.current
+          const currentIsMobile = isMobileRef.current
+          const messageWidth = currentIsMobile ? 200 : 350
+          const messageHeight = currentIsMobile ? 100 : 150
+
+          let x = 100
+          let y = 100
+
+          if (currentDimensions.width > 0 && currentDimensions.height > 0) {
+            x = Math.random() * (currentDimensions.width - messageWidth - padding * 2) + padding
+            y = Math.random() * (currentDimensions.height - messageHeight - padding * 2) + padding
+          }
+
           const displayId = crypto.randomUUID()
 
           return [...prevActive, {
             id: displayId,
             text: newMessage.text,
-            x: position.x,
-            y: position.y,
+            x,
+            y,
             duration: durationInSeconds,
             scheduledId: newMessage.id,
           }]
@@ -369,7 +402,7 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       console.log('Disconnecting Socket.io...')
       socket.disconnect()
     }
-  }, [isInitialized, maxConcurrentMessages, generateMessagePosition])
+  }, [isInitialized])
 
   return (
     <AnimatePresence>
