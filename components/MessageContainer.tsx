@@ -286,11 +286,77 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     return () => clearInterval(interval)
   }, [syncTimeWithServer])
 
-  // Периодическая перезагрузка расписания
+  // Периодическая перезагрузка расписания с обновлением новых сообщений
   useEffect(() => {
-    const interval = setInterval(loadSchedule, 300000) // каждые 5 минут
+    if (!isInitialized) return
+
+    const checkForNewMessages = async () => {
+      try {
+        const response = await fetch('/api/schedule')
+        const data = await response.json()
+
+        if (data.schedule && data.schedule.length > 0) {
+          setSchedule(prevSchedule => {
+            // Находим новые сообщения (которых нет в текущем schedule)
+            const existingIds = new Set(prevSchedule.map(msg => msg.id))
+            const newMessages = data.schedule.filter((msg: ScheduledMessage) => !existingIds.has(msg.id))
+
+            if (newMessages.length > 0) {
+              console.log(`Found ${newMessages.length} new messages`)
+
+              // Показываем новые сообщения сразу (если есть место)
+              newMessages.forEach((newMsg: ScheduledMessage) => {
+                setActiveMessages(prevActive => {
+                  const currentMax = maxConcurrentRef.current
+
+                  if (prevActive.length < currentMax) {
+                    // Генерируем позицию
+                    const padding = 50
+                    const currentDimensions = dimensionsRef.current
+                    const currentIsMobile = isMobileRef.current
+                    const messageWidth = currentIsMobile ? 200 : 350
+                    const messageHeight = currentIsMobile ? 100 : 150
+
+                    let x = 100
+                    let y = 100
+
+                    if (currentDimensions.width > 0 && currentDimensions.height > 0) {
+                      x = Math.random() * (currentDimensions.width - messageWidth - padding * 2) + padding
+                      y = Math.random() * (currentDimensions.height - messageHeight - padding * 2) + padding
+                    }
+
+                    const displayId = crypto.randomUUID()
+                    const durationInSeconds = normalizeDuration(newMsg.duration / 1000)
+
+                    return [...prevActive, {
+                      id: displayId,
+                      text: newMsg.text,
+                      x,
+                      y,
+                      duration: durationInSeconds,
+                      scheduledId: newMsg.id,
+                    }]
+                  }
+                  return prevActive
+                })
+              })
+
+              // Возвращаем обновленный список (старые + новые)
+              return [...prevSchedule, ...newMessages]
+            }
+
+            return prevSchedule
+          })
+        }
+      } catch (error) {
+        console.error('Error checking for new messages:', error)
+      }
+    }
+
+    // Проверяем новые сообщения каждые 10 секунд
+    const interval = setInterval(checkForNewMessages, 10000)
     return () => clearInterval(interval)
-  }, [loadSchedule])
+  }, [isInitialized, loadSchedule])
 
   // Fallback на тестовые данные, если нет расписания
   useEffect(() => {
