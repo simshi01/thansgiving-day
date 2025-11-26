@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
+import { io, Socket } from 'socket.io-client'
 import MessageBubble from './MessageBubble'
 import { normalizeDuration, MESSAGE_DISPLAY } from '@/lib/constants'
 
@@ -42,6 +43,7 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
   const spawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const currentMessageIndexRef = useRef<number>(0) // индекс текущего сообщения в цикле (используем ref вместо state)
   const isSchedulerRunningRef = useRef<boolean>(false) // флаг, чтобы не запускать scheduler повторно
+  const socketRef = useRef<Socket | null>(null)
 
   // Получаем размеры экрана
   useEffect(() => {
@@ -289,6 +291,85 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       setCycleDuration(testMessages.length * 5000)
     }
   }, [testMessages, schedule.length, isInitialized])
+
+  // Подключение к Socket.io для real-time обновлений
+  useEffect(() => {
+    if (!isInitialized) return
+
+    console.log('Connecting to Socket.io...')
+
+    // Подключаемся к socket серверу
+    const socket = io({
+      path: '/api/socket',
+    })
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      console.log('Socket.io connected')
+    })
+
+    socket.on('disconnect', () => {
+      console.log('Socket.io disconnected')
+    })
+
+    // Обработка нового сообщения
+    socket.on('message:new', (data: { id: string; text: string; duration: number }) => {
+      console.log('New message received:', data)
+
+      // Нормализуем duration (приходит в секундах из БД)
+      const durationInSeconds = normalizeDuration(data.duration)
+      const durationInMs = durationInSeconds * 1000
+
+      const newMessage: ScheduledMessage = {
+        id: data.id,
+        text: data.text,
+        duration: durationInMs,
+        showTime: 0, // не важно для нового сообщения
+        position: 0, // position не важен, используем prev.length
+      }
+
+      // Добавляем в schedule для цикла
+      setSchedule(prev => [...prev, newMessage])
+
+      // Показываем сразу (если есть место на экране)
+      // Используем setActiveMessages с prev для актуального значения
+      setActiveMessages(prevActive => {
+        if (prevActive.length < maxConcurrentMessages) {
+          // Генерируем позицию и показываем сообщение
+          const position = generateMessagePosition()
+          const displayId = crypto.randomUUID()
+
+          return [...prevActive, {
+            id: displayId,
+            text: newMessage.text,
+            x: position.x,
+            y: position.y,
+            duration: durationInSeconds,
+            scheduledId: newMessage.id,
+          }]
+        }
+        return prevActive
+      })
+    })
+
+    // Обработка удаления сообщения
+    socket.on('message:deleted', (data: { id: string }) => {
+      console.log('Message deleted:', data.id)
+
+      // Удаляем из schedule
+      setSchedule(prev => prev.filter(msg => msg.id !== data.id))
+
+      // Удаляем из активных сообщений (если показывается)
+      setActiveMessages(prev => prev.filter(msg => msg.scheduledId !== data.id))
+    })
+
+    // Отключаемся при размонтировании
+    return () => {
+      console.log('Disconnecting Socket.io...')
+      socket.disconnect()
+    }
+  }, [isInitialized, maxConcurrentMessages, generateMessagePosition])
 
   return (
     <AnimatePresence>
