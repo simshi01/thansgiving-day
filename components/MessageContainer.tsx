@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import MessageBubble from './MessageBubble'
-import { normalizeDuration, MESSAGE_TIMING, MESSAGE_DISPLAY } from '@/lib/constants'
+import { normalizeDuration, MESSAGE_DISPLAY } from '@/lib/constants'
 
 interface ScheduledMessage {
   id: string
@@ -192,20 +192,14 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       showScheduledMessage(messageToShow)
     }
 
-    // Показываем первые MIN_CONCURRENT сообщений сразу
-    const initialCount = Math.min(MESSAGE_DISPLAY.MIN_CONCURRENT, schedule.length)
+    // Показываем первые сообщения постепенно до достижения maxConcurrent
+    const initialCount = Math.min(maxConcurrentMessages, schedule.length)
     for (let i = 0; i < initialCount; i++) {
       setTimeout(() => showNextMessage(), i * 500) // 500мс между первыми сообщениями
     }
 
-    // Настраиваем интервал для постепенного добавления новых сообщений
-    spawnIntervalRef.current = setInterval(() => {
-      // Показываем новое сообщение только если текущих меньше максимума
-      if (activeMessages.length < maxConcurrentMessages) {
-        showNextMessage()
-      }
-    }, MESSAGE_TIMING.SPAWN_INTERVAL)
-  }, [schedule, maxConcurrentMessages, currentMessageIndex, showScheduledMessage, activeMessages.length])
+    // Интервал больше не нужен - новые сообщения появятся через handleMessageComplete
+  }, [schedule, maxConcurrentMessages, currentMessageIndex, showScheduledMessage])
 
   // Удаление завершившегося сообщения и показ следующего
   const handleMessageComplete = useCallback((id: string) => {
