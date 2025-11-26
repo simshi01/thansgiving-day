@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import MessageBubble from './MessageBubble'
-import { normalizeDuration } from '@/lib/constants'
+import { normalizeDuration, MESSAGE_TIMING, MESSAGE_DISPLAY } from '@/lib/constants'
 
 interface ScheduledMessage {
   id: string
@@ -35,9 +35,12 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
   const [isMobile, setIsMobile] = useState(false)
   const [scale, setScale] = useState(1)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0) // индекс текущего сообщения в цикле
+  const [maxConcurrentMessages, setMaxConcurrentMessages] = useState<number>(MESSAGE_DISPLAY.MAX_CONCURRENT)
 
   const scheduleTimerRef = useRef<NodeJS.Timeout | null>(null)
   const cycleStartTimeRef = useRef<number>(0)
+  const spawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Получаем размеры экрана
   useEffect(() => {
@@ -46,21 +49,25 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
       const height = window.innerHeight
       const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
       const isMobileDevice = width < 768 || (isTouchDevice && width < 1024)
-      
+
       setIsMobile(isMobileDevice)
-      
+
       if (!isMobileDevice) {
         const isLargeScreen = width >= 2000 || height >= 1000
         if (isLargeScreen) {
           const scaleFactor = Math.min(width / 1920, height / 1080)
           setScale(Math.max(1, Math.min(scaleFactor, 1.5)))
+          // Для больших экранов показываем больше сообщений
+          setMaxConcurrentMessages(MESSAGE_DISPLAY.MAX_CONCURRENT_LARGE)
         } else {
           setScale(1)
+          setMaxConcurrentMessages(MESSAGE_DISPLAY.MAX_CONCURRENT)
         }
       } else {
         setScale(1)
+        setMaxConcurrentMessages(MESSAGE_DISPLAY.MIN_CONCURRENT)
       }
-      
+
       setDimensions({ width, height })
     }
 
@@ -157,52 +164,64 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     setActiveMessages(prev => [...prev, messageToShow])
   }, [generateMessagePosition])
 
-  // Запуск планировщика сообщений
+  // Запуск планировщика сообщений с постепенным появлением
   const startScheduler = useCallback(() => {
-    if (schedule.length === 0 || cycleDuration === 0) {
+    if (schedule.length === 0) {
       console.log('No schedule to start')
       return
     }
 
-    // Останавливаем предыдущий таймер
-    if (scheduleTimerRef.current) {
-      clearTimeout(scheduleTimerRef.current)
+    // Останавливаем предыдущие таймеры
+    if (spawnIntervalRef.current) {
+      clearInterval(spawnIntervalRef.current)
     }
 
-    const startCycle = () => {
-      const cycleStartTime = getSyncedTime()
-      cycleStartTimeRef.current = cycleStartTime
+    console.log(`Starting scheduler with ${schedule.length} messages, max concurrent: ${maxConcurrentMessages}`)
 
-      console.log('Starting new cycle at', new Date(cycleStartTime).toISOString())
+    // Функция для показа следующего сообщения
+    const showNextMessage = () => {
+      if (schedule.length === 0) return
 
-      schedule.forEach((scheduledMessage) => {
-        const delay = scheduledMessage.showTime
+      // Получаем следующее сообщение из цикла
+      const messageToShow = schedule[currentMessageIndex % schedule.length]
 
-        setTimeout(() => {
-          const currentTime = getSyncedTime()
-          const expectedShowTime = cycleStartTime + scheduledMessage.showTime
+      // Увеличиваем индекс для следующего раза
+      setCurrentMessageIndex(prev => (prev + 1) % schedule.length)
 
-          // Проверяем, не слишком ли поздно (больше 1 секунды задержки)
-          if (currentTime - expectedShowTime > 1000) {
-            console.log(`Skipping message ${scheduledMessage.id} - too late`)
-            return
-          }
-
-          showScheduledMessage(scheduledMessage)
-        }, delay)
-      })
-
-      // Запланировать следующий цикл
-      scheduleTimerRef.current = setTimeout(startCycle, cycleDuration)
+      // Показываем сообщение
+      showScheduledMessage(messageToShow)
     }
 
-    startCycle()
-  }, [schedule, cycleDuration, getSyncedTime, showScheduledMessage])
+    // Показываем первые MIN_CONCURRENT сообщений сразу
+    const initialCount = Math.min(MESSAGE_DISPLAY.MIN_CONCURRENT, schedule.length)
+    for (let i = 0; i < initialCount; i++) {
+      setTimeout(() => showNextMessage(), i * 500) // 500мс между первыми сообщениями
+    }
 
-  // Удаление завершившегося сообщения
+    // Настраиваем интервал для постепенного добавления новых сообщений
+    spawnIntervalRef.current = setInterval(() => {
+      // Показываем новое сообщение только если текущих меньше максимума
+      if (activeMessages.length < maxConcurrentMessages) {
+        showNextMessage()
+      }
+    }, MESSAGE_TIMING.SPAWN_INTERVAL)
+  }, [schedule, maxConcurrentMessages, currentMessageIndex, showScheduledMessage, activeMessages.length])
+
+  // Удаление завершившегося сообщения и показ следующего
   const handleMessageComplete = useCallback((id: string) => {
     setActiveMessages(prev => prev.filter(msg => msg.id !== id))
-  }, [])
+
+    // Когда сообщение исчезает, показываем следующее из цикла
+    if (schedule.length > 0) {
+      const messageToShow = schedule[currentMessageIndex % schedule.length]
+      setCurrentMessageIndex(prev => (prev + 1) % schedule.length)
+
+      // Небольшая задержка перед показом следующего
+      setTimeout(() => {
+        showScheduledMessage(messageToShow)
+      }, 300)
+    }
+  }, [schedule, currentMessageIndex, showScheduledMessage])
 
   // Инициализация
   useEffect(() => {
@@ -234,6 +253,9 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
     return () => {
       if (scheduleTimerRef.current) {
         clearTimeout(scheduleTimerRef.current)
+      }
+      if (spawnIntervalRef.current) {
+        clearInterval(spawnIntervalRef.current)
       }
     }
   }, [isInitialized, schedule, startScheduler])

@@ -8,6 +8,13 @@ export const MESSAGE_DURATION = {
 
 export const MESSAGE_TIMING = {
   INTERVAL: 5000, // 5 секунд между сообщениями в радио режиме
+  SPAWN_INTERVAL: 2500, // 2.5 секунды между появлением новых сообщений
+} as const
+
+export const MESSAGE_DISPLAY = {
+  MIN_CONCURRENT: 3, // минимум сообщений на экране
+  MAX_CONCURRENT: 6, // максимум сообщений на экране (для обычных экранов)
+  MAX_CONCURRENT_LARGE: 10, // максимум для больших экранов
 } as const
 
 /**
