@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import MessageContainer from '@/components/MessageContainer'
 
 const exampleTexts = ['За каждый день', 'За родителей', 'За Божью благодать']
 const titleText = 'За что ты благодарен?'
@@ -145,15 +146,17 @@ export default function Home() {
     <div
       style={{
         width: '100vw',
-        height: '100vh',
+        minHeight: '100vh',
         backgroundColor: '#000000',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
+        paddingTop: isMobile ? '40px' : '60px',
         color: 'white',
         padding: '20px',
         position: 'relative',
+        overflow: 'hidden',
       }}
     >
       <motion.h1
@@ -210,6 +213,9 @@ export default function Home() {
           gap: isMobile ? '24px' : '24px',
           width: '100%',
           maxWidth: isMobile ? '100%' : '560px',
+          marginBottom: isMobile ? '40px' : '60px',
+          zIndex: 10,
+          position: 'relative',
         }}
       >
         <div

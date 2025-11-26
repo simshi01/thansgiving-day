@@ -196,18 +196,46 @@ export async function deactivateOldMessages(): Promise<void> {
   }
 }
 
+// Получение всех активных сообщений для радио потока
+export async function getAllMessages(): Promise<Message[]> {
+  try {
+    const db = getPool()
+
+    const result = await db.query<Message>(
+      `SELECT id, text, created_at as "createdAt", is_active as "isActive",
+              position_x as "positionX", position_y as "positionY", duration
+       FROM messages
+       WHERE is_active = true
+       ORDER BY created_at ASC` // ASC для последовательного показа
+    )
+
+    return result.rows.map(row => ({
+      id: row.id,
+      text: row.text,
+      createdAt: row.createdAt,
+      isActive: row.isActive,
+      positionX: row.positionX,
+      positionY: row.positionY,
+      duration: row.duration,
+    }))
+  } catch (error) {
+    console.error('Error fetching all messages:', error)
+    throw error
+  }
+}
+
 // Удаление сообщения по ID
 export async function deleteMessage(messageId: string): Promise<boolean> {
   try {
     const db = getPool()
-    
+
     const result = await db.query(
       `UPDATE messages
        SET is_active = false
        WHERE id = $1 AND is_active = true`,
       [messageId]
     )
-    
+
     return result.rowCount !== null && result.rowCount > 0
   } catch (error) {
     console.error('Error deleting message:', error)
