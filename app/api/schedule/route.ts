@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAllMessages } from '@/lib/db'
-
-const MESSAGE_INTERVAL = 5000 // 5 секунд между сообщениями
-const MESSAGE_DURATION = 4000 // 4 секунды показ сообщения
+import { MESSAGE_TIMING, MESSAGE_DURATION, normalizeDuration } from '@/lib/constants'
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,22 +16,29 @@ export async function GET(request: NextRequest) {
     }
 
     // Создаем расписание: каждое сообщение показывается через равные интервалы
-    const schedule = messages.map((message, index) => ({
-      id: message.id,
-      text: message.text,
-      duration: MESSAGE_DURATION,
-      showTime: index * MESSAGE_INTERVAL, // время показа относительно начала цикла
-      position: index,
-    }))
+    const schedule = messages.map((message, index) => {
+      // Нормализуем duration из БД (которая в секундах)
+      const durationInSeconds = normalizeDuration(message.duration)
+      // Конвертируем в миллисекунды для расписания
+      const durationInMs = durationInSeconds * 1000
 
-    const cycleDuration = messages.length * MESSAGE_INTERVAL
+      return {
+        id: message.id,
+        text: message.text,
+        duration: durationInMs,
+        showTime: index * MESSAGE_TIMING.INTERVAL, // время показа относительно начала цикла
+        position: index,
+      }
+    })
+
+    const cycleDuration = messages.length * MESSAGE_TIMING.INTERVAL
 
     return NextResponse.json({
       schedule,
       totalMessages: messages.length,
       cycleDuration,
-      messageInterval: MESSAGE_INTERVAL,
-      messageDuration: MESSAGE_DURATION,
+      messageInterval: MESSAGE_TIMING.INTERVAL,
+      messageDuration: MESSAGE_DURATION.DEFAULT * 1000,
       serverTime: Date.now(),
     })
   } catch (error) {

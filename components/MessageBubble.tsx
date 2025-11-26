@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 interface MessageBubbleProps {
   text: string
@@ -16,6 +16,13 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
   const [scale, setScale] = useState(1)
   const [blurAmount, setBlurAmount] = useState(40)
   const [offsetY, setOffsetY] = useState(25)
+
+  // Используем ref для хранения onComplete, чтобы избежать пересоздания таймера
+  const onCompleteRef = useRef(onComplete)
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete
+  }, [onComplete])
 
   useEffect(() => {
     // Определение типа устройства и адаптация размеров
@@ -57,11 +64,14 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
   useEffect(() => {
     // Показываем сообщение на duration секунд, затем удаляем
     const timer = setTimeout(() => {
-      onComplete()
+      onCompleteRef.current()
     }, duration * 1000)
 
-    return () => clearTimeout(timer)
-  }, [duration, onComplete])
+    // Обязательно очищаем таймер при размонтировании или изменении duration
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [duration])
 
   // Адаптивные размеры для мобильных и десктопов
   let fontSize: number

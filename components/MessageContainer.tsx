@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import MessageBubble from './MessageBubble'
+import { normalizeDuration } from '@/lib/constants'
 
 interface ScheduledMessage {
   id: string
@@ -135,22 +136,25 @@ export default function MessageContainer({ messages: testMessages, maxConcurrent
   // Показ сообщения по расписанию
   const showScheduledMessage = useCallback((scheduledMessage: ScheduledMessage) => {
     const position = generateMessagePosition()
-    const displayId = `${scheduledMessage.id}-${Date.now()}`
+    // Используем crypto.randomUUID() для гарантированно уникального ID
+    const displayId = crypto.randomUUID()
+
+    // Нормализуем duration с помощью общей функции
+    const durationInSeconds = scheduledMessage.duration / 1000
+    const normalizedDuration = normalizeDuration(durationInSeconds)
 
     const messageToShow = {
-          id: displayId,
+      id: displayId,
       text: scheduledMessage.text,
-          x: position.x,
-          y: position.y,
-      duration: scheduledMessage.duration / 1000, // конвертируем в секунды для компонента
+      x: position.x,
+      y: position.y,
+      duration: normalizedDuration,
       scheduledId: scheduledMessage.id,
     }
 
-    setActiveMessages(prev => {
-      // Удаляем предыдущее сообщение с тем же scheduledId, если оно есть
-      const filtered = prev.filter(msg => msg.scheduledId !== scheduledMessage.id)
-      return [...filtered, messageToShow]
-    })
+    // Просто добавляем сообщение без удаления предыдущих
+    // Каждое сообщение управляет своим таймером независимо
+    setActiveMessages(prev => [...prev, messageToShow])
   }, [generateMessagePosition])
 
   // Запуск планировщика сообщений
