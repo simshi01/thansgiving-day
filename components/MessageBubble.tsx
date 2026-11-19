@@ -3,6 +3,9 @@
 import { motion } from 'framer-motion'
 import { useEffect, useState, useRef } from 'react'
 
+// Синий цвет iMessage в тёмной теме iOS
+const IMESSAGE_BLUE = '#0A84FF'
+
 interface MessageBubbleProps {
   text: string
   x: number
@@ -76,22 +79,23 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
   // Адаптивные размеры для мобильных и десктопов
   let fontSize: number
   let maxWidth: number
-  let padding: string
-  let borderRadius: string
 
   if (isMobile) {
-    // Мобильные устройства - уменьшены в 1.5 раза
     fontSize = 11
     maxWidth = 187
-    padding = '7px 9px'
-    borderRadius = '12px 12px 12px 0px'
   } else {
-    // Десктоп - уменьшены в 2 раза
     fontSize = scale >= 1.3 ? 32 : scale >= 1.1 ? 25 : 18
     maxWidth = scale >= 1.3 ? 563 : scale >= 1.1 ? 450 : 315
-    padding = scale >= 1.3 ? '27px 36px' : scale >= 1.1 ? '21px 27px' : '14px 18px'
-    borderRadius = scale >= 1.3 ? '32px 32px 32px 0px' : scale >= 1.1 ? '25px 25px 25px 0px' : '21px 21px 21px 0px'
   }
+
+  // Пропорции пузыря iMessage (iOS: шрифт 17px, скругление 18px, отступы 7px/12px).
+  // Всё масштабируется от размера шрифта, чтобы хвостик выглядел одинаково на любом экране.
+  const k = fontSize / 17
+  const radius = 18 * k
+  const padding = `${7 * k}px ${12 * k}px`
+  // Хвостик выступает за правый край пузыря на 7 единиц и опускается ниже его низа на 5
+  const tailOverhang = 7 * k
+  const tailDrop = 5 * k
 
   return (
     <motion.div
@@ -129,17 +133,39 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
       <div
         style={{
           position: 'relative',
-          padding: padding,
-          backgroundColor: '#007AFF',
-          borderRadius: borderRadius,
+          padding,
+          backgroundColor: IMESSAGE_BLUE,
+          borderRadius: `${radius}px`,
           color: 'white',
           fontSize: `${fontSize}px`,
-          lineHeight: '1.4',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          lineHeight: 1.3,
+          letterSpacing: '-0.01em',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
           wordWrap: 'break-word',
         }}
       >
-        {text}
+        {/* Хвостик iMessage: правый край пузыря плавно уходит вниз-вправо в острый кончик,
+            а между кончиком и низом пузыря остаётся скруглённая выемка.
+            Координаты: (0, 0) — нижний правый угол пузыря, y растёт вниз.
+            Стоит до текста, чтобы текст рисовался поверх и не обрезался. */}
+        <svg
+          aria-hidden
+          viewBox="-18 -18 25 23"
+          width={radius + tailOverhang}
+          height={radius + tailDrop}
+          style={{
+            position: 'absolute',
+            right: -tailOverhang,
+            bottom: -tailDrop,
+            display: 'block',
+          }}
+        >
+          <path
+            d="M-18 0 L-10 0 C-7 0 -5.5 -0.8 -4.6 -2 C-3 0.6 1 3.4 5.6 3.6 Q6.6 3.6 6 3 C2 1.4 0 -1.5 0 -7 L0 -18 L-18 -18 Z"
+            fill={IMESSAGE_BLUE}
+          />
+        </svg>
+        <span style={{ position: 'relative' }}>{text}</span>
       </div>
     </motion.div>
   )

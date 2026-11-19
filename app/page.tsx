@@ -8,10 +8,32 @@ const exampleTexts = ['За каждый день', 'За родителей', '
 const titleText = 'За что ты благодарен?'
 const titleWords = titleText.split(' ')
 
+// Стабильный анонимный id устройства (для анти-спама)
+let memoryDeviceId: string | null = null
+function getDeviceId(): string {
+  try {
+    const existing = window.localStorage.getItem('deviceId')
+    if (existing) return existing
+    const id = crypto.randomUUID()
+    window.localStorage.setItem('deviceId', id)
+    return id
+  } catch {
+    if (!memoryDeviceId) {
+      try {
+        memoryDeviceId = crypto.randomUUID()
+      } catch {
+        memoryDeviceId = `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`
+      }
+    }
+    return memoryDeviceId
+  }
+}
+
 export default function Home() {
   const [currentExample, setCurrentExample] = useState(0)
   const [displayedText, setDisplayedText] = useState('')
   const [inputValue, setInputValue] = useState('')
+  const [honeypot, setHoneypot] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -110,12 +132,14 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-device-id': getDeviceId(),
         },
         body: JSON.stringify({
           text: inputValue.trim(),
           positionX: Math.round(positionX),
           positionY: Math.round(positionY),
           duration,
+          website: honeypot,
         }),
       })
 
@@ -217,6 +241,26 @@ export default function Home() {
           position: 'relative',
         }}
       >
+        {/* Honeypot: скрыто от людей, боты его заполняют */}
+        <input
+          type="text"
+          name="website"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: '-9999px',
+            top: 'auto',
+            width: '1px',
+            height: '1px',
+            opacity: 0,
+            overflow: 'hidden',
+            pointerEvents: 'none',
+          }}
+        />
         <div
           style={{
             position: 'relative',

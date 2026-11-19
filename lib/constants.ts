@@ -9,6 +9,9 @@ export const MESSAGE_DURATION = {
 export const MESSAGE_TIMING = {
   INTERVAL: 5000, // 5 секунд между сообщениями в радио режиме
   SPAWN_INTERVAL: 2500, // 2.5 секунды между появлением новых сообщений
+  POLL_INTERVAL: 3000, // экран проверяет новые сообщения раз в 3 секунды
+  POLL_INTERVAL_IDLE: 15000, // ...или раз в 15 секунд, если новых давно не было
+  POLL_IDLE_AFTER: 10 * 60_000, // «давно» = 10 минут без новых сообщений
 } as const
 
 export const MESSAGE_DISPLAY = {

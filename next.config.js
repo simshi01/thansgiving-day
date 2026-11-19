@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   typescript: {
-    // Игнорируем ошибки типов при сборке для Railway (если нужно)
+    // Сборка падает при ошибках типов — так их не пропустить
     ignoreBuildErrors: false,
   },
 }

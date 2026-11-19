@@ -1,360 +1,345 @@
-// Расширенный список запрещенных слов на русском языке
-const forbiddenWords = [
-  // Матерные слова (основные) - строгая проверка
-  'блять', 'блядь', 'бля', 'бляд', 'блят', 'блядский', 'блядская', 'блядское',
-  'хуй', 'хуйня', 'хуе', 'хуё', 'хуев', 'хуевый', 'хуева', 'хуевое', 'хуйло',
-  'пизда', 'пиздец', 'пизд', 'пиздюк', 'пиздюля', 'пиздатый', 'пиздатая',
-  'ебан', 'ебать', 'ебал', 'ебат', 'ебану', 'ебануть', 'ебаный', 'ебаная', 'ебаное',
-  'ебло', 'ебанько', 'ебу', 'ебаш', 'ебаный',
-  'сука', 'суки', 'сучара', 'сучий', 'сукин', 'сукина',
-  'мудак', 'мудачок', 'мудила', 'мудацкий',
-  'гандон', 'гондон',
-  'залупа', 'залуп',
-  'дроч', 'дрочить', 'дрочил', 'дрочила',
-  'шлюха', 'шлюх', 'шлюш',
-  'блядина', 'бляди', 'блядство',
-  
-  // Плохие слова и оскорбления
-  'жопа', 'жоп', 'жопка', 'жопный', 'жопой',
-  'дурак', 'дура', 'дурачок', 'дурацкий', 'дурацкая',
-  'идиот', 'идиотка', 'идиотский', 'идиотская',
-  'тупой', 'тупая', 'тупость', 'тупой',
-  'дебил', 'дебилка', 'дебильный', 'дебильная',
-  'кретин', 'кретинка',
-  'придурок', 'придурочный',
-  'мразь', 'мразота',
-  'гад', 'гадина', 'гадкий', 'гадкая',
-  'сволочь', 'сволочи',
-  'подонок', 'подонки',
-  'ублюдок', 'ублюдки',
-  'скотина', 'скотины',
-  
-  // Негативные слова, не подходящие для благодарностей
-  'ненавижу', 'ненависть', 'ненавидеть',
-  'убить', 'убийство', 'убийца',
-  'смерть', 'умереть', 'умер',
-  'гадость', 'гадкий',
-]
+// Модерация коротких сообщений-благодарностей (русский + английский).
+//
+// Конвейер:
+//   1. Предобработка: NFKC, удаление невидимых/комбинирующих символов.
+//   2. Токенизация. Одиночные буквы, разделённые пробелами/точками/дефисами
+//      ("с у к а", "п.и.з.д.е.ц", "с-у-к-а"), склеиваются в один токен
+//      (это и есть "сжатый" проход: он работает только внутри серий одиночных
+//      букв, поэтому не создаёт ложных срабатываний на стыках обычных слов).
+//   3. Нормализация каждого токена: lowercase, ё->е, латиница/цифры/символы ->
+//      кириллица (xyй, cyka, п1здец, п@здец), схлопывание повторов (хууууй).
+//      Маска "*" разворачивается во все гласные (х*й, бл*дь).
+//   4. Проверка корневыми регулярками (с допустимыми приставками для мата) и
+//      явным списком безопасных основ для "широких" корней (мудр, сукн, ...).
+//   5. Английский: отдельная нормализация (цифры/символы -> латиница) и свой список.
+//
+// Религиозная лексика (смерть, умер, кровь, ад, грех, сатана, крест) не блокируется.
 
-// Разрешенные фразы и контексты (полные фразы, которые всегда разрешены)
-const allowedPhrases = [
-  'за маму', 'за маму', 'за маму', 'маме', 'мамой', 'матери', 'матерью',
-  'за бога', 'за бога', 'богу', 'богом', 'боже', 'божья', 'божью', 'божьей',
-  'за родителей', 'родителям', 'родителями', 'родителя',
-  'за семью', 'семье', 'семьей',
-  'за друзей', 'друзьям', 'друзьями', 'друга',
-  'за жизнь', 'жизни', 'жизнью',
-  'за любовь', 'любви', 'любовью',
-  'благодар', 'благодарность', 'благодарить', 'благодарен', 'благодарна',
-  'спасибо',
-]
+const ERROR_TEXT = 'Текст содержит недопустимые слова'
 
-// Разрешенные слова (которые могут содержать части запрещенных слов)
-const allowedWords = [
-  'мама', 'маму', 'маме', 'мамой', 'матери', 'матерью', 'мамаша',
-  'бог', 'бога', 'богу', 'богом', 'боже', 'божья', 'божью', 'божьей',
-  'родители', 'родителям', 'родителями', 'родителя', 'родитель',
-  'семья', 'семье', 'семьей',
-  'друзья', 'друзьям', 'друзьями', 'друг', 'друга',
-  'жизнь', 'жизни', 'жизнью',
-  'любовь', 'любви', 'любовью',
-]
+// ---------- Нормализация ----------
 
-// Транслитерация английских букв в русские (для обнаружения обходов)
-function transliterateToRussian(text: string): string {
-  const translitMap: { [key: string]: string } = {
-    'a': 'а', 'b': 'б', 'c': 'с', 'd': 'д', 'e': 'е',
-    'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'ж',
-    'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
-    'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
-    'u': 'у', 'v': 'в', 'w': 'в', 'x': 'х', 'y': 'у',
-    'z': 'з',
-    // Многосимвольные комбинации
-    'zh': 'ж', 'ch': 'ч', 'sh': 'ш', 'sch': 'щ',
-    'yu': 'ю', 'ya': 'я', 'yo': 'ё',
-  }
-  
-  let result = text.toLowerCase()
-  
-  // Сначала заменяем многосимвольные комбинации
-  for (const [from, to] of Object.entries(translitMap)) {
-    if (from.length > 1) {
-      result = result.replace(new RegExp(from, 'gi'), to)
-    }
-  }
-  
-  // Затем одиночные буквы
-  for (const [from, to] of Object.entries(translitMap)) {
-    if (from.length === 1) {
-      result = result.replace(new RegExp(from, 'gi'), to)
-    }
-  }
-  
-  return result
+const INVISIBLE_RE = /[­͏؜ᅟᅠ឴឵᠋-᠎​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ]/g
+const MARKS_RE = /[\u0300-\u036F\u0483-\u0489\u20D0-\u20FF]/g
+const CYR_RE = /[Ѐ-ӿ]/
+const LETTER_RE = /[A-Za-z\u00C0-\u024F\u0400-\u04FF]/
+
+// Латинские двойники -> кириллица
+const LAT_TO_CYR: Record<string, string> = {
+  a: 'а', b: 'б', c: 'с', e: 'е', h: 'н', k: 'к', m: 'м', o: 'о', p: 'р', t: 'т',
+  x: 'х', y: 'у', z: 'з', i: 'и', n: 'п', u: 'и', r: 'г', d: 'д', l: 'л', g: 'д', v: 'в',
+}
+// Цифры и символы -> кириллица
+const SYM_TO_CYR: Record<string, string> = {
+  '0': 'о', '1': 'и', '3': 'з', '4': 'а', '6': 'б', '8': 'в', '$': 'с', // '@' - маска, как '*'
+}
+// Цифры и символы -> латиница (для английского)
+const SYM_TO_LAT: Record<string, string> = {
+  '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '$': 's',
 }
 
-// Нормализация текста (удаление обходов)
-function normalizeText(text: string): string {
-  // Удаляем пробелы внутри слов (х у й -> хуй)
-  let normalized = text.replace(/(\S)\s+(\S)/g, '$1$2')
-  
-  // Транслитерируем английские буквы в русские
-  normalized = transliterateToRussian(normalized)
-  
-  // Заменяем обходы символов на обычные буквы
-  const replacements: { [key: string]: string } = {
-    '@': 'а', '4': 'а', '6': 'б', '3': 'з', '1': 'и', '0': 'о',
-    '*': '', '_': '', '-': '', '.': '', '!': '', '?': '', '#': '',
-  }
-  
-  normalized = normalized.toLowerCase()
-  for (const [from, to] of Object.entries(replacements)) {
-    normalized = normalized.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), to)
-  }
-  
-  return normalized
+const CYR_VOWELS = ['а', 'е', 'и', 'о', 'у', 'ы', 'э', 'ю', 'я']
+const LAT_VOWELS = ['a', 'e', 'i', 'o', 'u']
+
+function collapseRepeats(s: string): string {
+  return s.replace(/(.)\1+/g, '$1')
 }
 
-// Токенизация текста (разбиение на слова с учетом границ)
-function tokenizeText(text: string): string[] {
-  // Нормализуем текст
-  const normalized = normalizeText(text)
-  
-  // Убираем знаки препинания и разбиваем на слова
-  const cleanText = normalized.replace(/[.,!?;:()\-_\[\]{}'"]/g, ' ')
-  const words = cleanText.split(/\s+/).filter(word => word.length > 0)
-  
-  return words
+function basicClean(text: string): string {
+  return text.normalize('NFKC').replace(INVISIBLE_RE, '').replace(MARKS_RE, '').toLowerCase().replace(/ё/g, 'е')
 }
 
-// Проверка, является ли слово разрешенным или частью разрешенного слова
-function isAllowedWord(word: string): boolean {
-  // Точное совпадение с разрешенными словами
-  for (const allowedWord of allowedWords) {
-    if (word === allowedWord) {
-      return true
+function toCyr(token: string): string {
+  let out = ''
+  for (let i = 0; i < token.length; i++) {
+    const ch = token.charAt(i)
+    out += LAT_TO_CYR[ch] ?? SYM_TO_CYR[ch] ?? ch
+  }
+  return collapseRepeats(out)
+}
+
+function toLat(token: string): string {
+  let out = ''
+  for (let i = 0; i < token.length; i++) {
+    const ch = token.charAt(i)
+    out += SYM_TO_LAT[ch] ?? ch
+  }
+  return collapseRepeats(out)
+}
+
+// ---------- Токенизация ----------
+
+const DOTTED_RE = /^(?:[0-9A-Za-z\u00C0-\u024F\u0400-\u04FF@$][.\-_·]){2,}[0-9A-Za-z\u00C0-\u024F\u0400-\u04FF@$][.,!?;:…]*$/
+const SPLIT_RE = /[^0-9A-Za-z\u00C0-\u024F\u0400-\u04FF@$*]+/
+
+function tokenize(text: string): string[] {
+  const cleaned = basicClean(text)
+  const raw = cleaned.split(/\s+/).filter(Boolean)
+  const tokens: string[] = []
+  let run: string[] = [] // серия одиночных букв
+
+  const flushRun = () => {
+    if (run.length >= 3) {
+      tokens.push(run.join(''))
+    } else {
+      tokens.push(...run)
     }
-    // Если проверяемое слово является частью разрешенного (но не наоборот)
-    // Например: "ма" является частью "мама" - разрешаем
-    if (allowedWord.includes(word) && allowedWord.length > word.length) {
-      return true
+    run = []
+  }
+
+  for (const r of raw) {
+    if (DOTTED_RE.test(r)) {
+      flushRun()
+      tokens.push(r.replace(/[^0-9A-Za-z\u00C0-\u024F\u0400-\u04FF@$]/g, ''))
+      continue
+    }
+    const parts = r.split(SPLIT_RE).filter(Boolean)
+    // Одиночный символ (буква/цифра/@/$) как отдельное "слово" -> кандидат в серию
+    if (parts.length === 1 && parts[0].length === 1 && parts[0] !== '*' && /[@$A-Za-z\u00C0-\u024F\u0400-\u04FF]/.test(parts[0])) {
+      run.push(parts[0])
+      continue
+    }
+    flushRun()
+    for (const p of parts) tokens.push(p)
+  }
+  flushRun()
+  return tokens.filter(t => LETTER_RE.test(t))
+}
+
+// ---------- Русские корни ----------
+
+// Приставки, допустимые перед матерными корнями.
+const PFX = '(?:вы|за|до|на|по|от|у|раз|рас|разъ|съ|при|про|под|подъ|пере|об|объ|вз|недо|долбо|долба|мудо|пиздо|хуе|въ|взъ)?'
+
+interface Detector {
+  re: RegExp
+  /** широкий корень: подчиняется списку безопасных основ */
+  loose?: boolean
+}
+
+const rx = (src: string): RegExp => new RegExp(src)
+
+// Срабатывают в любой позиции токена (однозначные корни; ловят и склейки типа "спасибохуй")
+const ANYWHERE: RegExp[] = [
+  rx('ху[йеяи]'), // хуй, хуе(в/ё/сос/та/во), хуя(к), хуи
+  rx('пизд'), // пизда, пиздец, пиздеть, распиздяй, опиздел, пиздёж
+  rx('пзд[цкат]'), // пздц
+  rx('еблан'),
+  rx('ублюд'),
+  rx('долб[ао](?:еб|ящ)'),
+  rx('заеб|наеб|выеб|доеб|отъеб|объеб'), // приставочные формы в склейках
+]
+
+// Только с начала токена (с допустимыми приставками)
+const ANCHORED: Detector[] = [
+  // ебать и производные
+  { re: rx(`^${PFX}еб(?:а[нтлшсцчй]|у[чнй]|л|и(?:сь|ть|тесь)|ы[вр]|ок|ну|ет$|ешь$|ут$|а$|у$|и$|ы$|$)`) },
+  { re: rx('^гребан') },
+  // бля
+  { re: rx(`^${PFX}бля(?:$|д|т|х|ц|з|н$)`) },
+  { re: rx('^бл[еэ]т') },
+  // сука, сучара
+  { re: rx('^сцу(?:к|ч)|^су(?:к|ч)'), loose: true },
+  // мудак, мудила, мудозвон
+  { re: rx('^муд(?!р)'), loose: true },
+  // залупа
+  { re: rx('^залуп') },
+  // гандон
+  { re: rx('^г[ао]ндон') },
+  // шлюха
+  { re: rx('^шлю[хш]') },
+  // пидор
+  { re: rx('^пид(?:ор|ар|р)') },
+  // дрочить
+  { re: rx('^дроч'), loose: true },
+  // манда
+  { re: rx('^манд(?:а|у|ой|ы|е|ав)'), loose: true },
+  // нахер, похер
+  { re: rx('^(?:на|по)хер') },
+  { re: rx('^нах$|^пох$') },
+  { re: rx('^ип(?:ать|ат|ал|ан|ну|у)$|^(?:вы|за|до|на|по|от|у|раз|рас|съ|при|про|под|пере|об)ип(?:ать|ал|ан)') },
+  // жопа, говно, дерьмо, срать
+  { re: rx('^жоп') },
+  { re: rx('^г[ао]вн') },
+  { re: rx('^дерьм') },
+  { re: rx('^(?:на|по|вы|за)?срат') },
+  { re: rx('^(?:на|по|вы|за)?сран') },
+  { re: rx('^засранц') },
+  // хер, херня (но не херувим)
+  { re: rx('^хер(?:$|ня|ню|ни|ней|ов|ом|у$|а$|ам|ак|овин)') },
+  // оскорбления
+  { re: rx('^дебил') },
+  { re: rx('^идиот') },
+  { re: rx('^кретин') },
+  { re: rx('^придур(?:ок|к|оч)') },
+  { re: rx('^урод(?:$|ы$|ов$|ам$|ами$|а$|у$|е$|ом$|ин|ка$|ки$|ку$|ке$|ой$|ливый$|ство$)') },
+  { re: rx('^тварин|^твары$') },
+  { re: rx('^мраз(?:ь|от|и$)') },
+  { re: rx('^туп(?:ой|ая|ое|ые|ую|ого|ому|ым|ых|ою|иц|орыл|оголов|ость$|ак$|ари?$|ень$)') },
+  { re: rx('^дур(?:а|ы|е|у|ой)$|^дурак|^дурач|^дурацк|^дурень$') },
+  { re: rx('^козлин|^козлов(?:$)') },
+  { re: rx('^сволоч|^сволот') },
+  { re: rx('^подонк|^подонок') },
+  { re: rx('^гадин(?:а|ы|е|у|ой)$|^гад$') },
+  { re: rx('^паскуд|^падла$|^падлы$|^гнида$|^выродок$|^выродк') },
+  { re: rx('^чмо(?:$|ня|шник|шка)') },
+  { re: rx('^лох(?:$|и$|ов$|ам$|ом$|а$|у$|ушка$|ня$|анутый$)') },
+  { re: rx('^сукин') },
+]
+
+// Слова, которые блокируются только как оскорбление (по контексту соседних слов)
+const KOZEL_RE = rx('^козел$|^козлы$|^козла$')
+const KOZEL_SAFE_NEIGHBORS = new Set(['отпущения', 'отпущенья', 'молоко', 'молока', 'молоком', 'стадо', 'пасут', 'пасет'])
+const SKOTINA_RE = rx('^скотин(?:а|ы|е|у|ой)$')
+const SKOTINA_SAFE_NEIGHBORS = new Set([
+  'наша', 'нашу', 'нашей', 'нашем', 'моя', 'мою', 'моей', 'свою', 'своей', 'домашняя', 'домашнюю', 'домашней',
+  'всю', 'всей', 'нашу', 'корм', 'корма', 'кормить', 'кормил', 'накормить', 'накормил', 'скот', 'скота', 'пасти', 'хлев', 'хлеву',
+])
+
+// Безопасные основы (в нормализованном виде), для которых широкие корни не применяются.
+const ALLOWED_STEMS_RAW = [
+  'мудр', 'мудрец', 'мудрост', 'премудр',
+  'сукн', 'сукон', 'суков', 'сукров', 'сукцес', 'сучок', 'сучк_', 'сучь', 'сучьев',
+  'мандарин', 'мандат', 'мандол', 'мандраж', 'мандраг', 'мандал',
+  'дрочен',
+  // слова-ловушки (не содержат матерных корней, но перечислены для надёжности)
+  'хлеб', 'неб', 'ребен', 'ребят', 'треб', 'употреб', 'оскорб', 'страх', 'психо', 'гребл', 'греб_', 'скреб',
+  'рубл', 'корабл', 'команд', 'сабл', 'учеб', 'погреб', 'истреб', 'колеб', 'лебед',
+]
+const ALLOWED_STEMS = ALLOWED_STEMS_RAW
+  .filter(s => !s.endsWith('_'))
+  .map(s => collapseRepeats(s))
+
+function isAllowedStem(token: string): boolean {
+  for (const stem of ALLOWED_STEMS) {
+    if (token.startsWith(stem)) return true
+  }
+  return false
+}
+
+// Приставки-"склейки" благодарности (спасибосука, благодарюсука)
+const GLUE_PREFIX_RE = /^(?:спасибо|благодарю|благодарен|благодарна|за)(?=.{3,})/
+
+function matchesRu(token: string): boolean {
+  for (const re of ANYWHERE) {
+    if (re.test(token)) return true
+  }
+  const allowed = isAllowedStem(token)
+  for (const d of ANCHORED) {
+    if (d.loose && allowed) continue
+    if (d.re.test(token)) return true
+  }
+  return false
+}
+
+// ---------- Английский ----------
+
+const EN_PATTERNS: RegExp[] = [
+  /fuck|fuk(?:er|ing|ed|s)?$|^fck|^fuc?k/,
+  /shit/,
+  /bitch/,
+  /ashole|^asholes?$/,
+  /^dicks?$|^dickhead|^dik$/,
+  /^cunts?|^cnt$/,
+  /^stfu$|^wtf$/,
+  /^whores?$|^sluts?$|^bastards?$|^wankers?$|^twats?$|^prick$|^pricks$/,
+  /^pusy$|^pusies$/,
+  /^cocks?$|^cocksucker/,
+  /^pis(?:s|ed|ing)?$|^pised|^pisof/,
+  /^nig(?:er|a)s?$/,
+  /^fagot|^fags?$/,
+  /^motherfuk|^mothrfuk/,
+  /^blyat|^blyad|^blya$|^suka$|^suki$|^pizd|^pidor|^pidar|^mudak|^ebat|^ebal|^ebany|^dolboeb|^gandon|^zalup|^xuy|^huy|^nahuy|^nahui/,
+]
+const EN_SAFE = new Set(['shitake', 'shiitake', 'shitake', 'scunthorpe', 'pissarro'])
+
+function matchesEn(token: string): boolean {
+  if (EN_SAFE.has(token)) return false
+  for (const re of EN_PATTERNS) {
+    if (re.test(token)) return true
+  }
+  return false
+}
+
+// ---------- Проверка токена ----------
+
+function variantsWithMask(s: string, vowels: string[]): string[] {
+  if (!/[*@]/.test(s)) return [s]
+  return vowels.map(v => s.replace(/[*@]/g, v))
+}
+
+function stripStars(s: string): string {
+  return s.replace(/[*@]/g, '')
+}
+
+function tokenIsBad(token: string): boolean {
+  const hasCyr = CYR_RE.test(token)
+
+  // Русский путь (также ловит латинские двойники: cyka, xyй)
+  const cyr = toCyr(token)
+  const cyrVariants = variantsWithMask(cyr, CYR_VOWELS)
+  for (const v of cyrVariants) {
+    if (matchesRu(v)) return true
+    // склейка: спасибосука, благодарюсука
+    const m = GLUE_PREFIX_RE.exec(v)
+    if (m && matchesRu(v.slice(m[0].length))) return true
+  }
+  // маска вместо буквы можно просто выбросить (ёб*ный -> ебный) - не используем:
+  // гласные-подстановки покрывают реальные случаи.
+
+  // Английский путь (только для токенов без кириллицы)
+  if (!hasCyr) {
+    const lat = toLat(token)
+    for (const v of variantsWithMask(lat, LAT_VOWELS)) {
+      if (matchesEn(v)) return true
+    }
+    // маска как пропуск буквы (f*ck -> fck, c*nt -> cnt)
+    if (/[*@]/.test(token) && matchesEn(stripStars(lat))) return true
+  }
+  return false
+}
+
+const SKOTINA_CONTEXT_RE = rx('^(?:ферм|хлев|двор|сарай|пастбищ|доить|доил|корм)')
+const TVAR_RE = rx('^тварь$')
+const TVAR_PREV_RE = rx('^(?:всяк|кажд|вся$|все$|всю$)')
+
+function hasNear(norm: string[], i: number, dist: number, re: RegExp): boolean {
+  for (let j = Math.max(0, i - dist); j <= Math.min(norm.length - 1, i + dist); j++) {
+    if (j !== i && re.test(norm[j])) return true
+  }
+  return false
+}
+
+function hasBad(tokens: string[]): boolean {
+  const norm: string[] = tokens.map(t => toCyr(t).replace(/[*@]/g, ''))
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+    if (tokenIsBad(t)) return true
+
+    const n = norm[i]
+    if (KOZEL_RE.test(n)) {
+      const prev = norm[i - 1]
+      const next = norm[i + 1]
+      if (!(prev && KOZEL_SAFE_NEIGHBORS.has(prev)) && !(next && KOZEL_SAFE_NEIGHBORS.has(next))) return true
+    }
+    if (SKOTINA_RE.test(n) && !hasNear(norm, i, 2, SKOTINA_CONTEXT_RE) && !(norm[i - 1] && SKOTINA_SAFE_NEIGHBORS.has(norm[i - 1])) && !(norm[i + 1] && SKOTINA_SAFE_NEIGHBORS.has(norm[i + 1]))) return true
+    if (TVAR_RE.test(n)) {
+      const prev = norm[i - 1]
+      const next = norm[i + 1]
+      if (!(prev && TVAR_PREV_RE.test(prev)) && !(next && /^божи/.test(next))) return true
     }
   }
   return false
 }
 
-// Проверка, содержит ли текст разрешенную фразу
-function containsAllowedPhrase(text: string): boolean {
-  const lowerText = text.toLowerCase()
-  for (const phrase of allowedPhrases) {
-    if (lowerText.includes(phrase)) {
-      return true
-    }
-  }
-  return false
-}
-
-// Проверка контекста: есть ли запрещенное слово в тексте, но не в разрешенной фразе
-function hasForbiddenWordInContext(text: string, words: string[]): boolean {
-  const lowerText = text.toLowerCase()
-  const normalizedText = normalizeText(text)
-  const normalizedLower = normalizedText.toLowerCase()
-  
-  // Проверяем каждое запрещенное слово
-  for (const forbiddenWord of forbiddenWords) {
-    // Ищем запрещенное слово в нормализованном тексте
-    const escapedWord = forbiddenWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const wordBoundaryRegex = new RegExp(`\\b${escapedWord}\\b`, 'i')
-    
-    if (wordBoundaryRegex.test(normalizedLower)) {
-      // Проверяем что это не часть разрешенного слова
-      if (isAllowedWord(forbiddenWord)) {
-        continue
-      }
-      
-      // Проверяем что это не часть разрешенной фразы
-      let isInAllowedPhrase = false
-      for (const phrase of allowedPhrases) {
-        if (phrase.includes(forbiddenWord)) {
-          isInAllowedPhrase = true
-          break
-        }
-      }
-      
-      if (isInAllowedPhrase) {
-        continue
-      }
-      
-      // Проверяем контекст: если запрещенное слово является частью какого-то слова в тексте
-      // Например: "блядская" содержит "бляд" - блокируем
-      // Но "мама" содержит "ма" - это нормально (если "ма" не в списке запрещенных)
-      let isPartOfAllowedWord = false
-      for (const word of words) {
-        // Если слово содержит запрещенное слово, но само является разрешенным
-        if (word.includes(forbiddenWord) && isAllowedWord(word)) {
-          isPartOfAllowedWord = true
-          break
-        }
-      }
-      
-      // Если запрещенное слово есть, но не является частью разрешенного слова или фразы - блокируем
-      if (!isPartOfAllowedWord) {
-        return true
-      }
-    }
-  }
-  
-  return false
-}
+// ---------- Публичный API ----------
 
 // Функция проверки текста на наличие запрещенных слов
 export function moderateText(text: string): { isValid: boolean; moderatedText?: string; reason?: string } {
-  const originalText = text.trim()
-  const lowerText = originalText.toLowerCase()
-  
-  // Проверяем разрешенные фразы сначала
-  const hasAllowedPhrase = containsAllowedPhrase(lowerText)
-  
-  // Нормализуем текст для проверки обходов (включая транслитерацию)
-  const normalizedText = normalizeText(originalText)
-  const normalizedLower = normalizedText.toLowerCase()
-  
-  // Токенизируем текст (разбиваем на слова)
-  const words = tokenizeText(originalText)
-  
-  // Проверка контекста: если есть запрещенное слово рядом с разрешенным, но не в разрешенной фразе
-  if (hasForbiddenWordInContext(originalText, words)) {
-    return { 
-      isValid: false, 
-      reason: `Текст содержит недопустимые слова` 
-    }
+  const tokens = tokenize(text.trim())
+  if (hasBad(tokens)) {
+    return { isValid: false, reason: ERROR_TEXT }
   }
-  
-  // Проверяем каждое слово на точное совпадение с запрещенными
-  for (const word of words) {
-    // Пропускаем очень короткие слова
-    if (word.length < 2) continue
-    
-    // Проверяем точное совпадение с запрещенными словами
-    for (const forbiddenWord of forbiddenWords) {
-      // Точное совпадение слова
-      if (word === forbiddenWord) {
-        // Если это разрешенное слово, пропускаем
-        if (isAllowedWord(word)) {
-          continue
-        }
-        
-        // Если есть разрешенная фраза, проверяем контекст
-        if (hasAllowedPhrase) {
-          // Проверяем что запрещенное слово не является частью разрешенной фразы
-          let isInAllowedPhrase = false
-          for (const phrase of allowedPhrases) {
-            if (phrase.includes(word)) {
-              isInAllowedPhrase = true
-              break
-            }
-          }
-          if (!isInAllowedPhrase) {
-            return { 
-              isValid: false, 
-              reason: `Текст содержит недопустимые слова` 
-            }
-          }
-        } else {
-          // Нет разрешенных фраз - строгая проверка
-          return { 
-            isValid: false, 
-            reason: `Текст содержит недопустимые слова` 
-          }
-        }
-      }
-      // Слово содержит запрещенное слово (но не наоборот)
-      else if (word.length >= forbiddenWord.length && word.includes(forbiddenWord)) {
-        // Если это разрешенное слово, пропускаем
-        if (isAllowedWord(word)) {
-          continue
-        }
-        
-        // Если есть разрешенная фраза, проверяем контекст
-        if (hasAllowedPhrase) {
-          // Разрешаем только если это точно часть разрешенной фразы
-          let isInAllowedPhrase = false
-          for (const phrase of allowedPhrases) {
-            if (phrase.includes(word)) {
-              isInAllowedPhrase = true
-              break
-            }
-          }
-          if (!isInAllowedPhrase) {
-            return { 
-              isValid: false, 
-              reason: `Текст содержит недопустимые слова` 
-            }
-          }
-        } else {
-          return { 
-            isValid: false, 
-            reason: `Текст содержит недопустимые слова` 
-          }
-        }
-      }
-    }
-  }
-  
-  // Дополнительная проверка: ищем запрещенные слова в нормализованном тексте с границами слов
-  for (const forbiddenWord of forbiddenWords) {
-    // Используем регулярное выражение для поиска слова с границами
-    const escapedWord = forbiddenWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const wordBoundaryRegex = new RegExp(`\\b${escapedWord}\\b`, 'i')
-    
-    if (wordBoundaryRegex.test(normalizedLower)) {
-      // Проверяем что это не часть разрешенной фразы
-      if (!hasAllowedPhrase) {
-        // Проверяем что это не часть разрешенного слова
-        const wordsInText = normalizedLower.split(/\s+/)
-        let foundInAllowed = false
-        for (const word of wordsInText) {
-          if (word.includes(forbiddenWord) && isAllowedWord(word)) {
-            foundInAllowed = true
-            break
-          }
-        }
-        if (!foundInAllowed) {
-          return { 
-            isValid: false, 
-            reason: `Текст содержит недопустимые слова` 
-          }
-        }
-      } else {
-        // Если есть разрешенная фраза, проверяем что запрещенное слово не является частью фразы
-        let isInAllowedPhrase = false
-        for (const phrase of allowedPhrases) {
-          if (phrase.includes(forbiddenWord)) {
-            isInAllowedPhrase = true
-            break
-          }
-        }
-        if (!isInAllowedPhrase) {
-          // Проверяем что это не часть разрешенного слова
-          const wordsInText = normalizedLower.split(/\s+/)
-          let foundInAllowed = false
-          for (const word of wordsInText) {
-            if (word.includes(forbiddenWord) && isAllowedWord(word)) {
-              foundInAllowed = true
-              break
-            }
-          }
-          if (!foundInAllowed) {
-            return { 
-              isValid: false, 
-              reason: `Текст содержит недопустимые слова` 
-            }
-          }
-        }
-      }
-    }
-  }
-  
   return { isValid: true, moderatedText: text }
 }
 
@@ -363,11 +348,11 @@ export function validateTextLength(text: string, maxLength: number = 300): { isV
   if (text.trim().length === 0) {
     return { isValid: false, reason: 'Текст не может быть пустым' }
   }
-  
+
   if (text.length > maxLength) {
     return { isValid: false, reason: `Текст не может быть длиннее ${maxLength} символов` }
   }
-  
+
   return { isValid: true }
 }
 
@@ -378,13 +363,12 @@ export function validateMessage(text: string): { isValid: boolean; reason?: stri
   if (!lengthCheck.isValid) {
     return lengthCheck
   }
-  
+
   // Модерация
   const moderationCheck = moderateText(text)
   if (!moderationCheck.isValid) {
     return moderationCheck
   }
-  
+
   return { isValid: true }
 }
-
