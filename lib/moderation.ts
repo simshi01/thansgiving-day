@@ -95,7 +95,8 @@ function tokenize(text: string): string[] {
     }
     const parts = r.split(SPLIT_RE).filter(Boolean)
     // Одиночный символ (буква/цифра/@/$) как отдельное "слово" -> кандидат в серию
-    if (parts.length === 1 && parts[0].length === 1 && parts[0] !== '*' && /[@$A-Za-z\u00C0-\u024F\u0400-\u04FF]/.test(parts[0])) {
+    // \u0426\u0438\u0444\u0440\u044B \u0442\u043E\u0436\u0435: "\u043F 1 \u0437 \u0434 \u0435 \u0446" (1 = \u0438)
+    if (parts.length === 1 && parts[0].length === 1 && parts[0] !== '*' && /[@$0-9A-Za-z\u00C0-\u024F\u0400-\u04FF]/.test(parts[0])) {
       run.push(parts[0])
       continue
     }

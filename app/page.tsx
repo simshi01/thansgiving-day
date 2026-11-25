@@ -146,7 +146,10 @@ export default function Home() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Ошибка при отправке сообщения')
+        // Слишком часто — подсказываем, через сколько можно снова
+        const retryAfter = Number(response.headers.get('Retry-After'))
+        const wait = response.status === 429 && retryAfter > 0 && retryAfter <= 120 ? ` (ещё ${retryAfter} сек)` : ''
+        throw new Error((data.error || 'Ошибка при отправке сообщения') + wait)
       }
 
       setIsSubmitting(false)

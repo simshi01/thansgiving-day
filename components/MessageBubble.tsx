@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { useEffect, useState, useRef } from 'react'
+import { getBubbleMetrics, isTouchDevice, type BubbleMetrics } from '@/lib/bubble-metrics'
 
 // Синий цвет iMessage в тёмной теме iOS
 const IMESSAGE_BLUE = '#0A84FF'
@@ -15,10 +16,10 @@ interface MessageBubbleProps {
 }
 
 export default function MessageBubble({ text, x, y, duration, onComplete }: MessageBubbleProps) {
-  const [isMobile, setIsMobile] = useState(false)
-  const [scale, setScale] = useState(1)
-  const [blurAmount, setBlurAmount] = useState(40)
-  const [offsetY, setOffsetY] = useState(25)
+  // Размеры — от размера экрана (общие правила в lib/bubble-metrics.ts)
+  const [metrics, setMetrics] = useState<BubbleMetrics>(() =>
+    getBubbleMetrics(typeof window !== 'undefined' ? window.innerWidth : 1920, typeof window !== 'undefined' ? window.innerHeight : 1080, isTouchDevice())
+  )
 
   // Используем ref для хранения onComplete, чтобы избежать пересоздания таймера
   const onCompleteRef = useRef(onComplete)
@@ -28,40 +29,10 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
   }, [onComplete])
 
   useEffect(() => {
-    // Определение типа устройства и адаптация размеров
-    const updateDeviceType = () => {
-      const width = window.innerWidth
-      const height = window.innerHeight
-      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-      const isMobileDevice = width < 768 || (isTouchDevice && width < 1024)
-      
-      setIsMobile(isMobileDevice)
-      
-      if (isMobileDevice) {
-        // Мобильные устройства - меньшие размеры
-        setScale(1)
-        setBlurAmount(30)
-        setOffsetY(20)
-      } else {
-        // Десктоп - большие размеры
-        const isLargeScreen = width >= 2000 || height >= 1000
-        if (isLargeScreen) {
-          // Для экрана 2970x1080 увеличиваем размеры
-          const scaleFactor = Math.min(width / 1920, height / 1080)
-          setScale(Math.max(1, Math.min(scaleFactor, 1.5)))
-          setBlurAmount(60)
-          setOffsetY(40)
-        } else {
-          setScale(1)
-          setBlurAmount(40)
-          setOffsetY(25)
-        }
-      }
-    }
-
-    updateDeviceType()
-    window.addEventListener('resize', updateDeviceType)
-    return () => window.removeEventListener('resize', updateDeviceType)
+    const update = () => setMetrics(getBubbleMetrics(window.innerWidth, window.innerHeight, isTouchDevice()))
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
   }, [])
 
   useEffect(() => {
@@ -76,17 +47,7 @@ export default function MessageBubble({ text, x, y, duration, onComplete }: Mess
     }
   }, [duration])
 
-  // Адаптивные размеры для мобильных и десктопов
-  let fontSize: number
-  let maxWidth: number
-
-  if (isMobile) {
-    fontSize = 11
-    maxWidth = 187
-  } else {
-    fontSize = scale >= 1.3 ? 32 : scale >= 1.1 ? 25 : 18
-    maxWidth = scale >= 1.3 ? 563 : scale >= 1.1 ? 450 : 315
-  }
+  const { fontSize, maxWidth, blur: blurAmount, offsetY } = metrics
 
   // Пропорции пузыря iMessage (iOS: шрифт 17px, скругление 18px, отступы 7px/12px).
   // Всё масштабируется от размера шрифта, чтобы хвостик выглядел одинаково на любом экране.
